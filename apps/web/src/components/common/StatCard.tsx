@@ -22,13 +22,16 @@ export function StatCard({ title, value, subtitle, badge, badgeVariant = 'info',
   };
 
   // Accent color mappings (left border + icon/number color)
-  const accentStyles = accentColor ? {
+  const accentColorMap = {
     blue: { border: 'border-l-4 border-l-blue-500', icon: 'text-blue-600', value: 'text-blue-900' },
     green: { border: 'border-l-4 border-l-green-500', icon: 'text-green-600', value: 'text-green-900' },
     amber: { border: 'border-l-4 border-l-amber-500', icon: 'text-amber-600', value: 'text-amber-900' },
     red: { border: 'border-l-4 border-l-red-500', icon: 'text-red-600', value: 'text-red-900' },
     gray: { border: 'border-l-4 border-l-gray-400', icon: 'text-gray-500', value: 'text-gray-700' },
-  }[accentColor] : { border: '', icon: 'text-gray-500', value: 'text-gray-900' };
+  };
+  const accentStyles = accentColor && accentColor in accentColorMap
+    ? accentColorMap[accentColor as keyof typeof accentColorMap]
+    : { border: '', icon: 'text-gray-500', value: 'text-gray-900' };
 
   return (
     <div

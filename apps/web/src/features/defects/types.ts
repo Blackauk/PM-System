@@ -128,6 +128,7 @@ export interface DefectFilter {
   showOverdue?: boolean;
   showUnsafe?: boolean;
   showUnassigned?: boolean;
+  showFromInspection?: boolean;
   complianceTag?: ComplianceTag;
 }
 

@@ -7,10 +7,12 @@ export type SortDirection = 'asc' | 'desc' | null;
 
 interface SortableColumn {
   key: string;
-  label: string;
+  label: string | ReactNode;
   sortable?: boolean;
   align?: 'left' | 'center' | 'right';
+  width?: number;
   render?: (value: any, row: any) => ReactNode;
+  renderHeader?: (sortKey: string | null, sortDirection: SortDirection) => ReactNode;
 }
 
 interface SortableTableProps {
@@ -23,6 +25,9 @@ interface SortableTableProps {
   onSelectionChange?: (selectedIds: string[]) => void;
   getRowId?: (row: any) => string;
   getRowClassName?: (row: any) => string;
+  expandedRowId?: string | null;
+  renderExpandedRow?: (row: any) => ReactNode;
+  onRowHover?: (rowId: string | null) => void;
 }
 
 export function SortableTable({
@@ -35,6 +40,9 @@ export function SortableTable({
   onSelectionChange,
   getRowId = (row) => row.id,
   getRowClassName,
+  expandedRowId = null,
+  renderExpandedRow,
+  onRowHover,
 }: SortableTableProps) {
   const [sortKey, setSortKey] = useState<string | null>(defaultSort?.key || null);
   const [sortDirection, setSortDirection] = useState<SortDirection>(defaultSort?.direction || null);
@@ -136,6 +144,10 @@ export function SortableTable({
     if ((e.target as HTMLElement).closest('input[type="checkbox"]')) {
       return;
     }
+    // Don't navigate if clicking chevron or view button
+    if ((e.target as HTMLElement).closest('button')) {
+      return;
+    }
     onRowClick?.(row);
   };
 
@@ -158,28 +170,34 @@ export function SortableTable({
               />
             </TableHeaderCell>
           )}
-          {columns.map((column) => {
+          {columns.map((column, colIndex) => {
             const alignClass = column.align === 'center' ? 'text-center' : column.align === 'right' ? 'text-right' : 'text-left';
+            const style = column.width ? { width: `${column.width}px`, minWidth: `${column.width}px`, maxWidth: `${column.width}px` } : {};
             return (
               <TableHeaderCell
                 key={column.key}
-                className={`${column.sortable ? 'cursor-pointer select-none hover:bg-gray-50' : ''} ${alignClass}`}
+                className={`${column.sortable ? 'cursor-pointer select-none hover:bg-gray-50' : ''} ${alignClass} relative`}
                 onClick={() => handleHeaderClick(column.key, column.sortable)}
+                style={style}
               >
-                <div className={`flex items-center gap-2 ${column.align === 'center' ? 'justify-center' : column.align === 'right' ? 'justify-end' : ''}`}>
-                  <span>{column.label}</span>
-                  {column.sortable && (
-                    <span className="text-gray-400">
-                      {sortKey === column.key && sortDirection === 'asc' ? (
-                        <ArrowUp className="w-4 h-4" />
-                      ) : sortKey === column.key && sortDirection === 'desc' ? (
-                        <ArrowDown className="w-4 h-4" />
-                      ) : (
-                        <ArrowLeftRight className="w-3 h-3 opacity-30" />
-                      )}
-                    </span>
-                  )}
-                </div>
+                {column.renderHeader ? (
+                  column.renderHeader(sortKey, sortDirection)
+                ) : (
+                  <div className={`flex items-center gap-2 ${column.align === 'center' ? 'justify-center' : column.align === 'right' ? 'justify-end' : ''}`}>
+                    <span>{column.label}</span>
+                    {column.sortable && (
+                      <span className="text-gray-400">
+                        {sortKey === column.key && sortDirection === 'asc' ? (
+                          <ArrowUp className="w-4 h-4" />
+                        ) : sortKey === column.key && sortDirection === 'desc' ? (
+                          <ArrowDown className="w-4 h-4" />
+                        ) : (
+                          <ArrowLeftRight className="w-3 h-3 opacity-30" />
+                        )}
+                      </span>
+                    )}
+                  </div>
+                )}
               </TableHeaderCell>
             );
           })}
@@ -189,30 +207,45 @@ export function SortableTable({
         {sortedData.map((row, index) => {
           const rowId = getRowId(row);
           const isSelected = selectable && selectedIds.includes(rowId);
+          const isExpanded = expandedRowId === rowId;
+          const colSpan = columns.length + (selectable ? 1 : 0);
+          
           return (
-            <TableRow
-              key={rowId || index}
-              onClick={(e) => handleRowClick(row, e)}
-              className={`${onRowClick ? 'cursor-pointer hover:bg-gray-50' : ''} ${getRowClassName ? getRowClassName(row) : ''}`}
-            >
-              {selectable && (
-                <TableCell onClick={(e) => e.stopPropagation()}>
-                  <Checkbox
-                    checked={isSelected}
-                    onChange={(e) => handleSelectRow(rowId, e)}
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                </TableCell>
-              )}
-              {columns.map((column) => {
-                const alignClass = column.align === 'center' ? 'text-center' : column.align === 'right' ? 'text-right' : 'text-left';
-                return (
-                  <TableCell key={column.key} className={alignClass}>
-                    {column.render ? column.render(row[column.key], row) : String(row[column.key] || '')}
+            <>
+              <TableRow
+                key={rowId || index}
+                onClick={(e) => handleRowClick(row, e)}
+                onMouseEnter={onRowHover ? () => onRowHover(rowId) : undefined}
+                onMouseLeave={onRowHover ? () => onRowHover(null) : undefined}
+                className={`${onRowClick ? 'cursor-pointer hover:bg-gray-50' : ''} ${getRowClassName ? getRowClassName(row) : ''}`}
+              >
+                {selectable && (
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <Checkbox
+                      checked={isSelected}
+                      onChange={(e) => handleSelectRow(rowId, e)}
+                      onClick={(e) => e.stopPropagation()}
+                    />
                   </TableCell>
-                );
-              })}
-            </TableRow>
+                )}
+                {columns.map((column) => {
+                  const alignClass = column.align === 'center' ? 'text-center' : column.align === 'right' ? 'text-right' : 'text-left';
+                  const style = column.width ? { width: `${column.width}px`, minWidth: `${column.width}px`, maxWidth: `${column.width}px` } : {};
+                  return (
+                    <TableCell key={column.key} className={alignClass} style={style}>
+                      {column.render ? column.render(row[column.key], row) : String(row[column.key] || '')}
+                    </TableCell>
+                  );
+                })}
+              </TableRow>
+              {isExpanded && renderExpandedRow && (
+                <TableRow key={`${rowId}-expanded`}>
+                  <TableCell colSpan={colSpan} className="px-6 py-4 bg-gray-50">
+                    {renderExpandedRow(row)}
+                  </TableCell>
+                </TableRow>
+              )}
+            </>
           );
         })}
       </tbody>

@@ -368,91 +368,84 @@ export function PMScheduleDetailPage() {
       label: 'Overview',
       content: (
         <div className="space-y-6">
-          <Card>
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-gray-900">Schedule Details</h3>
-                <Button size="sm" variant="outline" onClick={() => setIsEditScheduleOpen(true)}>
-                  Edit Schedule
-                </Button>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">PM Schedule Name</label>
-                  <div className="font-medium text-gray-900">{pmSchedule.name}</div>
-                </div>
-
-                {pmSchedule.description && (
+          <div className="grid grid-cols-1 lg:grid-cols-[60%_40%] gap-6">
+            {/* Left Card: Schedule Summary */}
+            <Card>
+              <div className="p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Schedule Summary</h3>
+                <div className="space-y-3">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                    <div className="text-gray-900">{pmSchedule.description}</div>
+                    <label className="block text-sm font-medium text-gray-500 mb-1">PM Schedule Name</label>
+                    <div className="font-medium text-gray-900">{pmSchedule.name}</div>
                   </div>
-                )}
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Asset</label>
-                  <div className="flex items-center gap-2">
-                    <Badge variant="info">{pmSchedule.assetTypeCode}</Badge>
-                    <button
-                      onClick={() => navigate(`/assets/${pmSchedule.assetId}`)}
-                      className="font-mono text-blue-600 hover:text-blue-700 hover:underline"
-                    >
-                      {pmSchedule.assetId}
-                    </button>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 mb-1">Asset</label>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Badge variant="info">{pmSchedule.assetTypeCode}</Badge>
+                      <button
+                        onClick={() => navigate(`/assets/${pmSchedule.assetId}`)}
+                        className="font-mono text-blue-600 hover:text-blue-700 hover:underline"
+                      >
+                        {pmSchedule.assetId}
+                      </button>
+                      <span className="text-gray-900">{pmSchedule.assetMake} {pmSchedule.assetModel}</span>
+                    </div>
                   </div>
-                  <div className="text-sm text-gray-600 mt-1">
-                    {pmSchedule.assetMake} {pmSchedule.assetModel}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 mb-1">Site</label>
+                    <div className="text-gray-900">{pmSchedule.siteName}</div>
                   </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Site</label>
-                  <div className="text-gray-900">{pmSchedule.siteName}</div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Schedule Type</label>
-                  <div className="text-gray-900">{pmSchedule.scheduleType}</div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Frequency</label>
-                  <div className="text-gray-900">{getFrequencyDisplay()}</div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Last Done</label>
-                  <div className="text-gray-900">
-                    {pmSchedule.lastDoneDate ? new Date(pmSchedule.lastDoneDate).toLocaleDateString() : 'Never'}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 mb-1">Schedule Type</label>
+                    <div className="text-gray-900">
+                      {pmSchedule.scheduleType === 'TimeBased' ? 'Time-based' : 'Usage-based'}
+                    </div>
                   </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Next Due</label>
-                  <div className="font-medium text-gray-900">
-                    {new Date(pmSchedule.nextDueDate).toLocaleDateString()}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 mb-1">Frequency</label>
+                    <div className="text-gray-900">{getFrequencyDisplay()}</div>
                   </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">RAG Status</label>
-                  {getRAGBadge(pmSchedule.ragStatus)}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Assigned Team</label>
-                  <div className="text-gray-900">{pmSchedule.assignedTeam || 'N/A'}</div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                  <Badge variant={pmSchedule.isActive ? 'success' : 'default'}>
-                    {pmSchedule.isActive ? 'Active' : 'Inactive'}
-                  </Badge>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 mb-1">Assigned Team</label>
+                    <div className="text-gray-900">{pmSchedule.assignedTeam || 'N/A'}</div>
+                  </div>
                 </div>
               </div>
-            </div>
-          </Card>
+            </Card>
+
+            {/* Right Card: Operational Status */}
+            <Card>
+              <div className="p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Operational Status</h3>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 mb-1">Last Done</label>
+                    <div className="text-gray-900">
+                      {pmSchedule.lastDoneDate ? new Date(pmSchedule.lastDoneDate).toLocaleDateString() : 'Never'}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 mb-1">Next Due</label>
+                    <div className="font-medium text-gray-900">
+                      {new Date(pmSchedule.nextDueDate).toLocaleDateString()}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 mb-1">RAG Status</label>
+                    <div>{getRAGBadge(pmSchedule.ragStatus)}</div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 mb-1">Status</label>
+                    <div>
+                      <Badge variant={pmSchedule.isActive ? 'success' : 'default'}>
+                        {pmSchedule.isActive ? 'Active' : 'Inactive'}
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          </div>
         </div>
       ),
     },
@@ -834,26 +827,125 @@ export function PMScheduleDetailPage() {
           <div className="p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Activity Log</h3>
             {activity.length > 0 ? (
-              <div className="space-y-3">
-                {activity.map((entry) => (
-                  <div key={entry.id} className="flex items-start gap-4 p-3 border-b last:border-0">
-                    <div className="flex-shrink-0 w-32 text-sm text-gray-600">
-                      {new Date(entry.timestamp).toLocaleString()}
-                    </div>
-                    <div className="flex-1">
-                      <div className="font-medium text-gray-900">{entry.userName}</div>
-                      <div className="text-sm text-gray-700">
-                        {entry.action.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}
-                      </div>
-                      {entry.details && (
-                        <div className="text-xs text-gray-500 mt-1">{entry.details}</div>
-                      )}
-                    </div>
-                  </div>
-                ))}
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHeaderCell>Date & Time</TableHeaderCell>
+                      <TableHeaderCell>User</TableHeaderCell>
+                      <TableHeaderCell>Action</TableHeaderCell>
+                      <TableHeaderCell>Details</TableHeaderCell>
+                      <TableHeaderCell>Reference</TableHeaderCell>
+                    </TableRow>
+                  </TableHeader>
+                  <tbody>
+                    {activity.map((entry) => {
+                      const getActionBadge = (action: string) => {
+                        const actionLabels: Record<string, string> = {
+                          schedule_created: 'Generated',
+                          checklist_edited: 'Checklist Edited',
+                          pm_task_generated: 'Generated',
+                          marked_completed: 'Completed',
+                          rescheduled: 'Rescheduled',
+                          document_uploaded: 'Document Uploaded',
+                          status_changed: 'Status Changed',
+                          assigned_team_changed: 'Team Changed',
+                        };
+                        const label = actionLabels[action] || action.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+                        
+                        const variants: Record<string, 'default' | 'success' | 'warning' | 'info'> = {
+                          schedule_created: 'info',
+                          pm_task_generated: 'info',
+                          marked_completed: 'success',
+                          rescheduled: 'warning',
+                          document_uploaded: 'info',
+                          checklist_edited: 'default',
+                          status_changed: 'default',
+                          assigned_team_changed: 'default',
+                        };
+                        return (
+                          <Badge variant={variants[action] || 'default'} size="sm">
+                            {label}
+                          </Badge>
+                        );
+                      };
+
+                      // Extract reference from details (e.g., PM Task ID, document name)
+                      const extractReference = (details?: string) => {
+                        if (!details) return null;
+                        // Look for PM Task ID pattern (PMT-XXXXXX)
+                        const pmTaskMatch = details.match(/PMT-\d+/);
+                        if (pmTaskMatch) {
+                          return {
+                            type: 'pm_task',
+                            value: pmTaskMatch[0],
+                            label: pmTaskMatch[0],
+                          };
+                        }
+                        // Look for document name pattern (Uploaded: filename.ext)
+                        const docMatch = details.match(/Uploaded:\s*(.+)/);
+                        if (docMatch) {
+                          return {
+                            type: 'document',
+                            value: docMatch[1],
+                            label: docMatch[1],
+                          };
+                        }
+                        return null;
+                      };
+
+                      const reference = extractReference(entry.details);
+
+                      return (
+                        <TableRow key={entry.id}>
+                          <TableCell>
+                            <div className="text-sm text-gray-900">
+                              {new Date(entry.timestamp).toLocaleString('en-GB', {
+                                day: '2-digit',
+                                month: '2-digit',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-sm text-gray-900">{entry.userName}</div>
+                          </TableCell>
+                          <TableCell>{getActionBadge(entry.action)}</TableCell>
+                          <TableCell>
+                            <div className="text-sm text-gray-700 max-w-md">
+                              {entry.details || '—'}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {reference ? (
+                              <button
+                                className="text-sm text-blue-600 hover:text-blue-700 hover:underline font-mono"
+                                onClick={() => {
+                                  if (reference.type === 'pm_task') {
+                                    // Navigate to PM Task or show toast
+                                    showToast(`Viewing ${reference.value}`, 'info');
+                                  } else {
+                                    // Show document preview or navigate
+                                    showToast(`Viewing document: ${reference.label}`, 'info');
+                                  }
+                                }}
+                              >
+                                {reference.label}
+                              </button>
+                            ) : (
+                              <span className="text-sm text-gray-400">—</span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </tbody>
+                </Table>
               </div>
             ) : (
-              <div className="text-center py-8 text-gray-500">No activity recorded</div>
+              <div className="text-center py-8 text-gray-500">No activity recorded for this PM schedule yet</div>
             )}
           </div>
         </Card>
@@ -887,6 +979,9 @@ export function PMScheduleDetailPage() {
                 {pmSchedule.siteName} • Next due: {new Date(pmSchedule.nextDueDate).toLocaleDateString()}
               </div>
             </div>
+            <Button size="sm" variant="outline" onClick={() => setIsEditScheduleOpen(true)}>
+              Edit Schedule
+            </Button>
           </div>
 
           {/* Actions */}

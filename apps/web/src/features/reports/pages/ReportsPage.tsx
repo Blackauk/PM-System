@@ -24,6 +24,8 @@ import { getInspections } from '../../inspections/services';
 import { getDefects } from '../../defects/services';
 import { getWorkOrders } from '../../work-orders/services';
 import { getAssets, getAssetTypes, mockSites } from '../../assets/services';
+import { getPMSchedules } from '../../pm-schedules/services';
+import { GenerateReportModal } from '../components/GenerateReportModal';
 import { Download, FileText, X, CheckCircle, XCircle, AlertTriangle, ClipboardCheck, Clock, AlertCircle, ClipboardList, Maximize } from 'lucide-react';
 import { StatCard } from '../../../components/common/StatCard';
 import { WildcardGrid } from '../../../components/common/WildcardGrid';
@@ -32,18 +34,7 @@ import type { Inspection } from '../../inspections/types';
 import type { Defect } from '../../defects/types';
 import type { WorkOrder } from '../../work-orders/types';
 import type { Asset } from '../../assets/types';
-
-interface ReportFilters {
-  dateFrom?: string;
-  dateTo?: string;
-  siteId?: string;
-  locationId?: string;
-  assetTypeId?: string;
-  assetId?: string;
-  assignedToId?: string;
-  status?: string;
-  severity?: string;
-}
+import type { ReportFilters } from '../types';
 
 interface SavedReport {
   id: string;
@@ -59,7 +50,9 @@ export function ReportsPage() {
     const saved = localStorage.getItem('reports-filters');
     return saved ? JSON.parse(saved) : {};
   });
-  const [reportsTab, setReportsTab] = useState<'overview' | 'saved'>('overview');
+  const [reportsTab, setReportsTab] = useState<'overview' | 'saved' | 'scheduled'>('overview');
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [editingSchedule, setEditingSchedule] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'inspections' | 'defects' | 'workOrders' | 'assets'>('inspections');
   const [tableSearch, setTableSearch] = useState('');
   const [showGenerateModal, setShowGenerateModal] = useState(false);
@@ -94,6 +87,7 @@ export function ReportsPage() {
   const allWorkOrders = useMemo(() => getWorkOrders(), []);
   const allAssets = useMemo(() => getAssets(), []);
   const assetTypes = useMemo(() => getAssetTypes(), []);
+  const allPMSchedules = useMemo(() => getPMSchedules(), []);
 
   // Apply filters to data
   const filteredInspections = useMemo(() => {
@@ -506,33 +500,14 @@ export function ReportsPage() {
   }, [activeTab]);
 
 
-  // Generate Report
-  const handleGenerateReport = (reportType: string, sections: string[], format: 'PDF' | 'Excel') => {
-    const report: SavedReport = {
-      id: crypto.randomUUID(),
-      name: `${reportType} Report - ${new Date().toLocaleString()}`,
-      type: reportType,
-      format,
-      createdAt: new Date().toISOString(),
-      data: {
-        filters,
-        kpis,
-        inspectionsChartData,
-        defectsChartData,
-        workOrdersChartData,
-        tableData,
-      },
-    };
-
-    setSavedReports(prev => {
-      const updated = [report, ...prev].slice(0, 50); // Keep last 50
-      localStorage.setItem('saved-reports', JSON.stringify(updated));
-      return updated;
-    });
-
-    setShowGenerateModal(false);
-    alert(`Report "${report.name}" generated successfully!`);
-  };
+  // Get site name for report
+  const selectedSiteName = useMemo(() => {
+    if (filters.siteId) {
+      const site = mockSites.find(s => s.id === filters.siteId);
+      return site?.name;
+    }
+    return undefined;
+  }, [filters.siteId]);
 
   const handleDownloadSavedReport = (report: SavedReport) => {
     if (report.format === 'Excel') {
@@ -1027,7 +1002,7 @@ export function ReportsPage() {
                     </div>
                   }
                 >
-                  <div className="p-6 pt-4">
+                  <div className="p-6 pt-2">
                     <Tabs
                       tabs={[
                         {
@@ -1084,6 +1059,68 @@ export function ReportsPage() {
                     />
                   </div>
                 </CollapsibleCard>
+              </div>
+            ),
+          },
+          {
+            id: 'scheduled',
+            label: 'Scheduled Reports',
+            content: (
+              <div className="mt-4">
+                <ScheduledReportsList
+                  onCreateClick={() => {
+                    setEditingSchedule(null);
+                    setShowScheduleModal(true);
+                  }}
+                  onEditClick={(schedule) => {
+                    setEditingSchedule(schedule);
+                    setShowScheduleModal(true);
+                  }}
+                  reportData={{
+                    kpis,
+                    inspectionsChartData,
+                    defectsChartData,
+                    defectsBySeverityData,
+                    tableData,
+                    filteredDefects,
+                    filteredWorkOrders,
+                    filteredInspections,
+                    allPMSchedules,
+                  }}
+                  filters={filters}
+                  siteNames={Object.fromEntries(mockSites.map(s => [s.id, s.name]))}
+                />
+              </div>
+            ),
+          },
+          {
+            id: 'scheduled',
+            label: 'Scheduled Reports',
+            content: (
+              <div className="mt-4">
+                <ScheduledReportsList
+                  onCreateClick={() => {
+                    setEditingSchedule(null);
+                    setShowScheduleModal(true);
+                  }}
+                  onEditClick={(schedule) => {
+                    setEditingSchedule(schedule);
+                    setShowScheduleModal(true);
+                  }}
+                  reportData={{
+                    kpis,
+                    inspectionsChartData,
+                    defectsChartData,
+                    defectsBySeverityData,
+                    tableData,
+                    filteredDefects,
+                    filteredWorkOrders,
+                    filteredInspections,
+                    allPMSchedules,
+                  }}
+                  filters={filters}
+                  siteNames={Object.fromEntries(mockSites.map(s => [s.id, s.name]))}
+                />
               </div>
             ),
           },
@@ -1243,62 +1280,23 @@ export function ReportsPage() {
 
 
       {/* Generate Report Modal */}
-      <Modal
+      <GenerateReportModal
         isOpen={showGenerateModal}
         onClose={() => setShowGenerateModal(false)}
-        title="Generate Report"
-        size="lg"
-      >
-        <div className="space-y-4">
-          <Select
-            label="Report Type"
-            value=""
-            onChange={() => {}}
-            options={[
-              { value: 'summary', label: 'Summary Report' },
-              { value: 'inspections', label: 'Inspections Report' },
-              { value: 'defects', label: 'Defects Report' },
-              { value: 'workOrders', label: 'Work Orders Report' },
-              { value: 'assets', label: 'Assets Report' },
-            ]}
-          />
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Sections</label>
-            <div className="space-y-2">
-              {['KPIs', 'Charts', 'Tables'].map(section => (
-                <Checkbox
-                  key={section}
-                  label={section}
-                  defaultChecked
-                />
-              ))}
-            </div>
-          </div>
-          <Select
-            label="Format"
-            value=""
-            onChange={() => {}}
-            options={[
-              { value: 'PDF', label: 'PDF' },
-              { value: 'Excel', label: 'Excel' },
-            ]}
-          />
-          <div className="flex gap-2 pt-4 border-t">
-            <Button
-              variant="outline"
-              onClick={() => setShowGenerateModal(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              onClick={() => handleGenerateReport('Summary', ['KPIs', 'Charts', 'Tables'], 'PDF')}
-            >
-              Generate Report
-            </Button>
-          </div>
-        </div>
-      </Modal>
+        filters={filters}
+        reportData={{
+          kpis,
+          inspectionsChartData,
+          defectsChartData,
+          defectsBySeverityData,
+          tableData,
+          filteredDefects,
+          filteredWorkOrders,
+          filteredInspections,
+          allPMSchedules,
+        }}
+        siteName={selectedSiteName}
+      />
 
       {/* Chart Focus Modals */}
       <ChartFocusModal
@@ -1548,6 +1546,19 @@ export function ReportsPage() {
           // Scroll to top of saved reports tab
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }}
+      />
+
+      {/* Schedule Modal */}
+      <ScheduleModal
+        isOpen={showScheduleModal}
+        onClose={() => {
+          setShowScheduleModal(false);
+          setEditingSchedule(null);
+        }}
+        onSuccess={() => {
+          // Refresh will be handled by ScheduledReportsList
+        }}
+        schedule={editingSchedule}
       />
     </div>
   );

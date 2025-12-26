@@ -24,6 +24,9 @@ interface ListPageTableProps {
   onSelectionChange?: (selectedIds: string[]) => void;
   getRowId?: (row: any) => string;
   getRowClassName?: (row: any) => string;
+  expandedRowId?: string | null;
+  renderExpandedRow?: (row: any) => ReactNode;
+  onRowHover?: (rowId: string | null) => void;
   
   // Footer props
   showingText?: string; // e.g., "Showing 1–25 of 35"
@@ -51,6 +54,9 @@ export function ListPageTable({
   onSelectionChange,
   getRowId,
   getRowClassName,
+  expandedRowId,
+  renderExpandedRow,
+  onRowHover,
   showingText,
   pagination,
   headerActions,
@@ -60,15 +66,16 @@ export function ListPageTable({
     <Card>
       <div className="p-6">
         {/* Table Toolbar: Search + Filter */}
-        <div className="flex items-center gap-3 mb-4">
-          <div className="flex-1">
+        <div className="flex items-center gap-3 mb-4 flex-nowrap lg:flex-nowrap">
+          <div className="flex-1 min-w-0">
             <Input
               placeholder={searchPlaceholder}
               value={searchValue}
               onChange={(e) => onSearchChange(e.target.value)}
+              className="w-full"
             />
           </div>
-          <div ref={filterButtonRef as RefObject<HTMLDivElement>}>
+          <div ref={filterButtonRef as RefObject<HTMLDivElement>} className="flex-shrink-0">
             <FilterButton
               onClick={onFilterClick}
               activeFilterCount={activeFilterCount}
@@ -76,7 +83,7 @@ export function ListPageTable({
             />
           </div>
           {headerActions && (
-            <div onClick={(e) => e.stopPropagation()}>
+            <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-2 flex-shrink-0">
               {headerActions}
             </div>
           )}
@@ -92,6 +99,9 @@ export function ListPageTable({
           onSelectionChange={onSelectionChange}
           getRowId={getRowId}
           getRowClassName={getRowClassName}
+          expandedRowId={expandedRowId}
+          renderExpandedRow={renderExpandedRow}
+          onRowHover={onRowHover}
         />
         
         {/* Empty State */}

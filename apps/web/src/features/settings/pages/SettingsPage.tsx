@@ -11,6 +11,7 @@ import { CategoriesSection } from '../sections/CategoriesSection';
 import { TagsSection } from '../sections/TagsSection';
 import { AuditLogSection } from '../sections/AuditLogSection';
 import { NotificationsSection } from '../sections/NotificationsSection';
+import { PDFBrandingSection } from '../sections/PDFBrandingSection';
 import { Card } from '../../../components/common/Card';
 import { Button } from '../../../components/common/Button';
 
@@ -93,6 +94,7 @@ export function SettingsPage() {
                 <Route path="tags" element={<TagsSection />} />
                 <Route path="audit-log" element={<AuditLogSection />} />
                 <Route path="notifications" element={<NotificationsSection onSave={() => setLastSaved(new Date().toISOString())} />} />
+                <Route path="pdf-branding" element={<PDFBrandingSection />} />
               </Routes>
             </ErrorBoundary>
           </div>

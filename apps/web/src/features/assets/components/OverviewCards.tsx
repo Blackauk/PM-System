@@ -53,9 +53,9 @@ export function OverviewCards({
       <div className="space-y-6">
         {/* Card 1: Asset Details */}
         <Card>
-          <div className="p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Asset Details</h3>
-            <div className="space-y-3">
+          <div className="p-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-3">Asset Details</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-500 mb-1">Asset ID</label>
                 <div className="font-mono font-medium text-gray-900">{asset.id}</div>
@@ -89,9 +89,9 @@ export function OverviewCards({
 
         {/* Card 2: Location & Ownership */}
         <Card>
-          <div className="p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Location & Ownership</h3>
-            <div className="space-y-3">
+          <div className="p-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-3">Location & Ownership</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-500 mb-1">Site</label>
                 <div className="text-gray-900">{asset.siteName}</div>
@@ -127,9 +127,9 @@ export function OverviewCards({
 
         {/* Card 3: Notes & Known Issues */}
         <Card>
-          <div className="p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Notes & Known Issues</h3>
-            <div className="space-y-4">
+          <div className="p-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-3">Notes & Known Issues</h3>
+            <div className="space-y-3">
               {asset.notes && (
                 <div>
                   <label className="block text-sm font-medium text-gray-500 mb-1">Notes</label>
@@ -157,39 +157,30 @@ export function OverviewCards({
       <div className="space-y-6">
         {/* Card 4: Status & Lifecycle */}
         <Card>
-          <div className="p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Status & Lifecycle</h3>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-sm font-medium text-gray-500 mb-1">Operational Status</label>
-                <div className="flex items-center gap-2">
-                  {getStatusBadge(asset.operationalStatus)}
-                  {canChangeStatus && (
-                    <Button size="sm" variant="outline" onClick={onChangeStatus}>
-                      Change Status
-                    </Button>
-                  )}
+          <div className="p-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-3">Status & Lifecycle</h3>
+            <div className="flex items-center gap-3 flex-wrap">
+              {getStatusBadge(asset.operationalStatus)}
+              {getLifecycleBadge(asset.lifecycleStatus)}
+              <Badge variant={asset.criticality === 'High' ? 'error' : asset.criticality === 'Medium' ? 'warning' : 'default'}>
+                {asset.criticality}
+              </Badge>
+              {canChangeStatus && (
+                <div className="ml-auto">
+                  <Button size="sm" variant="outline" onClick={onChangeStatus}>
+                    Change Status
+                  </Button>
                 </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-500 mb-1">Lifecycle Status</label>
-                {getLifecycleBadge(asset.lifecycleStatus)}
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-500 mb-1">Criticality</label>
-                <Badge variant={asset.criticality === 'High' ? 'error' : asset.criticality === 'Medium' ? 'warning' : 'default'}>
-                  {asset.criticality}
-                </Badge>
-              </div>
+              )}
             </div>
           </div>
         </Card>
 
         {/* Card 5: Dates & Usage */}
         <Card>
-          <div className="p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Dates & Usage</h3>
-            <div className="space-y-3">
+          <div className="p-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-3">Dates & Usage</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-500 mb-1">Commissioned</label>
                 <div className="text-gray-900">
@@ -218,7 +209,7 @@ export function OverviewCards({
                     : 'N/A'}
                 </div>
               </div>
-              <div>
+              <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-500 mb-1">Hours / Mileage</label>
                 <div className="flex items-center gap-2">
                   <div className="text-gray-900 flex-1">

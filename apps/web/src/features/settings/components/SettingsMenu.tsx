@@ -7,6 +7,7 @@ import {
   FileText, 
   Bell, 
   Shield,
+  FileImage,
   ChevronRight,
   Menu,
   X
@@ -84,6 +85,13 @@ export function SettingsMenu({ className = '' }: SettingsMenuProps) {
       label: 'Notifications',
       icon: <Bell className="w-5 h-5" />,
       path: '/settings/notifications',
+    },
+    {
+      id: 'pdf-branding',
+      label: 'Branding',
+      icon: <FileImage className="w-5 h-5" />,
+      path: '/settings/pdf-branding',
+      roles: ['Admin'],
     },
   ];
 

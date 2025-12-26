@@ -8,6 +8,7 @@ import { Card } from '../../../components/common/Card';
 import { Input } from '../../../components/common/Input';
 import { Button } from '../../../components/common/Button';
 import { Badge } from '../../../components/common/Badge';
+import { Checkbox } from '../../../components/common/Checkbox';
 import { SortableTable } from '../../../components/common/SortableTable';
 import { ListPageTable } from '../../../components/common/ListPageTable';
 import { Select } from '../../../components/common/Select';
@@ -15,9 +16,10 @@ import { FloatingFilterPanel, FilterSection } from '../../../components/common/F
 import { MultiSelectFilter } from '../../../components/common/MultiSelectFilter';
 import { FilterButton } from '../../../components/common/FilterButton';
 import { Tabs } from '../../../components/common/Tabs';
-import { ClipboardCheck, CheckCircle, AlertCircle, XCircle, AlertTriangle, Shield } from 'lucide-react';
+import { ClipboardCheck, CheckCircle, AlertCircle, XCircle, AlertTriangle, Shield, MoreVertical, Eye, Download, Play } from 'lucide-react';
 import { StatCard } from '../../../components/common/StatCard';
 import { WildcardGrid } from '../../../components/common/WildcardGrid';
+import { DropdownMenu } from '../../../components/common/DropdownMenu';
 import { canCreateInspection } from '../lib/permissions';
 import { mockSites } from '../mockData';
 import { getInspections, getInspectionAlerts, getInspectionById as getInspectionByIdService } from '../services';
@@ -25,7 +27,11 @@ import { CheckSheetsListPage } from './CheckSheetsListPage';
 import { ChecklistsListPage } from './ChecklistsListPage';
 import { showToast } from '../../../components/common/Toast';
 import { CollapsibleCard } from '../../../components/common/CollapsibleCard';
+import { formatDateUK } from '../../../lib/formatters';
+import { getPDFBrandingSettings } from '../../settings/sections/PDFBrandingSection';
 import type { InspectionFilter, InspectionStatus, InspectionResult, InspectionType, Inspection } from '../types';
+
+type WildcardFilter = 'ALL' | 'COMPLETED_WEEK' | 'OVERDUE' | 'FAILED' | 'OPEN_DEFECTS' | 'COMPLIANCE';
 
 export function InspectionsListPage() {
   const navigate = useNavigate();
@@ -62,8 +68,11 @@ export function InspectionsListPage() {
     return parsed;
   });
   const [activeQuickFilter, setActiveQuickFilter] = useState<string | null>(navState?.activeQuickFilter || null);
+  const [wildcardFilter, setWildcardFilter] = useState<WildcardFilter>('ALL');
   const filterButtonRef = useRef<HTMLDivElement>(null);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const menuRefs = useRef<Record<string, React.RefObject<HTMLButtonElement | null>>>({});
 
   // Testing Controls state
   const [showTestingControls, setShowTestingControls] = useState(false);
@@ -294,28 +303,6 @@ export function InspectionsListPage() {
     }
     
     // Status filters (OR logic)
-    const statusFilters: boolean[] = [];
-    if (filters.showOverdue) {
-      const today = new Date();
-      statusFilters.push(
-        filtered.some((i) => i.dueDate && new Date(i.dueDate) < today && i.status !== 'Closed')
-      );
-    }
-    if (filters.showFailed) {
-      statusFilters.push(filtered.some((i) => i.result === 'Fail'));
-    }
-    if (filters.showDueSoon) {
-      const nextWeek = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-      statusFilters.push(
-        filtered.some((i) => 
-          i.dueDate && 
-          new Date(i.dueDate) > new Date() &&
-          new Date(i.dueDate) <= nextWeek &&
-          i.status !== 'Closed'
-        )
-      );
-    }
-    
     if (filters.showOverdue || filters.showFailed || filters.showDueSoon) {
       const today = new Date();
       const nextWeek = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
@@ -350,6 +337,44 @@ export function InspectionsListPage() {
       filtered = filtered.filter((i) => i.inspectorId === user?.id);
     }
 
+    // Wildcard filters
+    if (wildcardFilter !== 'ALL') {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const weekStart = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+      
+      switch (wildcardFilter) {
+        case 'COMPLETED_WEEK':
+          filtered = filtered.filter((i) => {
+            if (!i.completedAt || i.status !== 'Closed') return false;
+            const completedDate = new Date(i.completedAt);
+            completedDate.setHours(0, 0, 0, 0);
+            return completedDate >= weekStart;
+          });
+          break;
+        case 'OVERDUE':
+          filtered = filtered.filter((i) => {
+            if (!i.dueDate) return false;
+            const dueDate = new Date(i.dueDate);
+            dueDate.setHours(0, 0, 0, 0);
+            return dueDate < today && i.status !== 'Closed' && i.status !== 'Approved';
+          });
+          break;
+        case 'FAILED':
+          filtered = filtered.filter((i) => i.result === 'Fail');
+          break;
+        case 'OPEN_DEFECTS':
+          filtered = filtered.filter((i) => i.linkedDefectIds && i.linkedDefectIds.length > 0);
+          break;
+        case 'COMPLIANCE':
+          filtered = filtered.filter((i) => {
+            // Check if any checklist items have compliance tags
+            return i.items.some((item) => item.complianceTag === 'PUWER' || item.complianceTag === 'LOLER');
+          });
+          break;
+      }
+    }
+
     // Search
     if (search) {
       const searchLower = search.toLowerCase();
@@ -363,31 +388,68 @@ export function InspectionsListPage() {
     }
 
     return filtered;
-  }, [allInspections, search, filters, activeQuickFilter, user?.id]);
+  }, [allInspections, search, filters, activeQuickFilter, wildcardFilter, user?.id]);
 
-  // Calculate summary from displayed inspections to ensure wildcards match table
+  // Calculate summary from filtered inspections (before wildcard filter) to ensure wildcards reflect current table state
   const summary = useMemo(() => {
     const now = new Date();
+    now.setHours(0, 0, 0, 0);
     const weekStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     
+    // Get base filtered inspections (without wildcard filter) for summary
+    let baseFiltered = [...allInspections];
+    
+    // Apply same filters as filteredInspections but without wildcard
+    if (filters.status) {
+      baseFiltered = baseFiltered.filter((i) => i.status === filters.status);
+    }
+    if (filters.result) {
+      baseFiltered = baseFiltered.filter((i) => i.result === filters.result);
+    }
+    if (filters.inspectionType) {
+      const types = Array.isArray(filters.inspectionType) ? filters.inspectionType : [filters.inspectionType];
+      baseFiltered = baseFiltered.filter((i) => types.includes(i.inspectionType));
+    }
+    if (filters.siteId) {
+      const sites = Array.isArray(filters.siteId) ? filters.siteId : [filters.siteId];
+      baseFiltered = baseFiltered.filter((i) => sites.includes(i.siteId || ''));
+    }
+    if (filters.assetId) {
+      baseFiltered = baseFiltered.filter((i) => i.assetId === filters.assetId);
+    }
+    
+    if (search) {
+      const searchLower = search.toLowerCase();
+      baseFiltered = baseFiltered.filter(
+        (i) =>
+          i.inspectionCode.toLowerCase().includes(searchLower) ||
+          i.templateName.toLowerCase().includes(searchLower) ||
+          i.assetId?.toLowerCase().includes(searchLower) ||
+          i.inspectorName.toLowerCase().includes(searchLower)
+      );
+    }
+    
     return {
-      total: allInspections.length,
-      completedThisWeek: allInspections.filter((i) => {
-        if (!i.completedAt) return false;
-        return new Date(i.completedAt) >= weekStart;
+      total: baseFiltered.length,
+      completedThisWeek: baseFiltered.filter((i) => {
+        if (!i.completedAt || i.status !== 'Closed') return false;
+        const completedDate = new Date(i.completedAt);
+        completedDate.setHours(0, 0, 0, 0);
+        return completedDate >= weekStart;
       }).length,
-      overdue: allInspections.filter((i) => {
+      overdue: baseFiltered.filter((i) => {
         if (!i.dueDate) return false;
-        return new Date(i.dueDate) < now && i.status !== 'Closed' && i.status !== 'Approved';
+        const dueDate = new Date(i.dueDate);
+        dueDate.setHours(0, 0, 0, 0);
+        return dueDate < now && i.status !== 'Closed' && i.status !== 'Approved';
       }).length,
-      failed: allInspections.filter((i) => i.result === 'Fail' && i.status !== 'Closed' && i.status !== 'Approved').length,
-      openDefectsFromInspections: allInspections.filter((i) => i.linkedDefectIds && i.linkedDefectIds.length > 0).reduce((sum, i) => sum + (i.linkedDefectIds?.length || 0), 0),
-      complianceInspections: allInspections.filter((i) => {
-        // Check if any checklist items have compliance tags
+      failed: baseFiltered.filter((i) => i.result === 'Fail').length,
+      openDefectsFromInspections: baseFiltered.filter((i) => i.linkedDefectIds && i.linkedDefectIds.length > 0).reduce((sum, i) => sum + (i.linkedDefectIds?.length || 0), 0),
+      complianceInspections: baseFiltered.filter((i) => {
         return i.items.some((item) => item.complianceTag === 'PUWER' || item.complianceTag === 'LOLER');
       }).length,
     };
-  }, [allInspections]);
+  }, [allInspections, filters, search]);
 
   const handleQuickFilter = (filter: string) => {
     setActiveQuickFilter(activeQuickFilter === filter ? null : filter);
@@ -517,6 +579,314 @@ export function InspectionsListPage() {
     console.log('[Testing] Cleared all inspection sessions');
   };
 
+  // PDF Export handler
+  const handleDownloadPDF = async (inspection: Inspection) => {
+    try {
+      // Dynamic import to avoid loading jsPDF on initial page load
+      const { default: jsPDF } = await import('jspdf');
+      const autoTable = (await import('jspdf-autotable')).default;
+      
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 20;
+      let yPos = margin;
+
+      // Get PDF branding settings
+      const brandingSettings = getPDFBrandingSettings();
+
+      // Add page number footer function
+      const addPageNumber = (pageNum: number, totalPages: number) => {
+        doc.setFontSize(8);
+        doc.setFont(undefined, 'normal');
+        doc.setTextColor(128, 128, 128);
+        const pageText = `Page ${pageNum} of ${totalPages}`;
+        const textWidth = doc.getTextWidth(pageText);
+        doc.text(pageText, pageWidth - margin - textWidth, pageHeight - 10);
+        doc.setTextColor(0, 0, 0); // Reset to black
+      };
+
+      // Banner Section
+      if (brandingSettings.showBanner) {
+        const bannerHeight = 40;
+        const bannerY = yPos;
+        yPos += bannerHeight + 10;
+
+        if (brandingSettings.bannerLayout === 'three-column') {
+          const colWidth = (pageWidth - 2 * margin) / 3;
+          const slots = [
+            { data: brandingSettings.bannerLeft, x: margin },
+            { data: brandingSettings.bannerCenter, x: margin + colWidth },
+            { data: brandingSettings.bannerRight, x: margin + 2 * colWidth },
+          ];
+
+          slots.forEach((slot) => {
+            if (slot.data.image) {
+              try {
+                const imgWidth = colWidth - 4;
+                const imgHeight = bannerHeight - 4;
+                doc.addImage(slot.data.image, 'PNG', slot.x + 2, bannerY + 2, imgWidth, imgHeight);
+              } catch (e) {
+                // If image fails, fall back to text
+                if (slot.data.text) {
+                  doc.setFontSize(10);
+                  doc.text(slot.data.text, slot.x + colWidth / 2, bannerY + bannerHeight / 2, {
+                    align: 'center',
+                    maxWidth: colWidth - 4,
+                  });
+                }
+              }
+            } else if (slot.data.text) {
+              doc.setFontSize(10);
+              doc.text(slot.data.text, slot.x + colWidth / 2, bannerY + bannerHeight / 2, {
+                align: 'center',
+                maxWidth: colWidth - 4,
+              });
+            }
+          });
+        } else {
+          // Single column
+          if (brandingSettings.bannerSingle.image) {
+            try {
+              const imgWidth = pageWidth - 2 * margin - 4;
+              const imgHeight = bannerHeight - 4;
+              doc.addImage(
+                brandingSettings.bannerSingle.image,
+                'PNG',
+                margin + 2,
+                bannerY + 2,
+                imgWidth,
+                imgHeight
+              );
+            } catch (e) {
+              if (brandingSettings.bannerSingle.text) {
+                doc.setFontSize(12);
+                doc.text(
+                  brandingSettings.bannerSingle.text,
+                  pageWidth / 2,
+                  bannerY + bannerHeight / 2,
+                  { align: 'center', maxWidth: pageWidth - 2 * margin - 4 }
+                );
+              }
+            }
+          } else if (brandingSettings.bannerSingle.text) {
+            doc.setFontSize(12);
+            doc.text(
+              brandingSettings.bannerSingle.text,
+              pageWidth / 2,
+              bannerY + bannerHeight / 2,
+              { align: 'center', maxWidth: pageWidth - 2 * margin - 4 }
+            );
+          }
+        }
+      }
+
+      // Title
+      doc.setFontSize(18);
+      doc.setFont(undefined, 'bold');
+      doc.text('Inspection Report', margin, yPos);
+      yPos += 12;
+
+      // Condensed Inspection Details in Grid Layout
+      doc.setFontSize(9);
+      doc.setFont(undefined, 'normal');
+      const gridCol1 = margin;
+      const gridCol2 = margin + (pageWidth - 2 * margin) / 2;
+      const gridRowHeight = 6;
+      let gridY = yPos;
+
+      // Row 1: Inspection ID | Template
+      doc.setFont(undefined, 'bold');
+      doc.text('Inspection ID:', gridCol1, gridY);
+      doc.setFont(undefined, 'normal');
+      doc.text(inspection.inspectionCode, gridCol1 + 35, gridY);
+      doc.setFont(undefined, 'bold');
+      doc.text('Template:', gridCol2, gridY);
+      doc.setFont(undefined, 'normal');
+      doc.text(inspection.templateName, gridCol2 + 25, gridY);
+      gridY += gridRowHeight;
+
+      // Row 2: Type | Asset
+      doc.setFont(undefined, 'bold');
+      doc.text('Type:', gridCol1, gridY);
+      doc.setFont(undefined, 'normal');
+      doc.text(getTypeLabel(inspection.inspectionType), gridCol1 + 20, gridY);
+      doc.setFont(undefined, 'bold');
+      doc.text('Asset:', gridCol2, gridY);
+      doc.setFont(undefined, 'normal');
+      doc.text(inspection.assetId || '—', gridCol2 + 20, gridY);
+      gridY += gridRowHeight;
+
+      // Row 3: Site | Location
+      doc.setFont(undefined, 'bold');
+      doc.text('Site:', gridCol1, gridY);
+      doc.setFont(undefined, 'normal');
+      doc.text(inspection.siteName || '—', gridCol1 + 20, gridY);
+      doc.setFont(undefined, 'bold');
+      doc.text('Location:', gridCol2, gridY);
+      doc.setFont(undefined, 'normal');
+      doc.text(inspection.locationName || '—', gridCol2 + 30, gridY);
+      gridY += gridRowHeight;
+
+      // Row 4: Scheduled Date | Completed Date
+      doc.setFont(undefined, 'bold');
+      doc.text('Scheduled Date:', gridCol1, gridY);
+      doc.setFont(undefined, 'normal');
+      doc.text(formatDateUK(inspection.inspectionDate), gridCol1 + 45, gridY);
+      doc.setFont(undefined, 'bold');
+      doc.text('Completed Date:', gridCol2, gridY);
+      doc.setFont(undefined, 'normal');
+      doc.text(inspection.completedAt ? formatDateUK(inspection.completedAt) : '—', gridCol2 + 45, gridY);
+      gridY += gridRowHeight;
+
+      // Row 5: Result | Status
+      doc.setFont(undefined, 'bold');
+      doc.text('Result:', gridCol1, gridY);
+      doc.setFont(undefined, 'normal');
+      doc.text(inspection.result || '—', gridCol1 + 25, gridY);
+      doc.setFont(undefined, 'bold');
+      doc.text('Status:', gridCol2, gridY);
+      doc.setFont(undefined, 'normal');
+      doc.text(inspection.status || '—', gridCol2 + 25, gridY);
+      gridY += gridRowHeight;
+
+      // Row 6: Inspector
+      doc.setFont(undefined, 'bold');
+      doc.text('Inspector:', gridCol1, gridY);
+      doc.setFont(undefined, 'normal');
+      doc.text(inspection.inspectorName || '—', gridCol1 + 30, gridY);
+
+      yPos = gridY + 10;
+
+      // Checklist Items Table
+      if (inspection.items && inspection.items.length > 0) {
+        const tableData = inspection.items.map((item) => {
+          const answer = inspection.answers?.find(a => a.checklistItemId === item.id);
+          const result = answer?.result || 'N/A';
+          const comment = answer?.comment || '';
+          const value = answer?.numericValue !== undefined 
+            ? `${answer.numericValue}${answer.unit || ''}`
+            : answer?.textValue || '';
+          
+          return [
+            item.question,
+            result,
+            value,
+            comment,
+          ];
+        });
+
+        autoTable(doc, {
+          head: [['Question', 'Result', 'Value', 'Comment']],
+          body: tableData,
+          startY: yPos,
+          margin: { left: margin, right: margin, bottom: 20 },
+          styles: { fontSize: 9 },
+          headStyles: { fillColor: [59, 130, 246], textColor: 255, fontStyle: 'bold' },
+          didDrawPage: (data: any) => {
+            // Add page numbers on each page
+            const pageNum = doc.getCurrentPageInfo().pageNumber;
+            const totalPages = (doc as any).internal.pages.length;
+            addPageNumber(pageNum, totalPages);
+          },
+        });
+        
+        yPos = (doc as any).lastAutoTable.finalY + 10;
+      }
+
+      // Defects Summary
+      if (inspection.linkedDefectIds && inspection.linkedDefectIds.length > 0) {
+        doc.setFontSize(14);
+        doc.setFont(undefined, 'bold');
+        doc.text('Defects Summary', margin, yPos);
+        yPos += 7;
+        doc.setFontSize(10);
+        doc.setFont(undefined, 'normal');
+        doc.text(`${inspection.linkedDefectIds.length} defect(s) linked to this inspection`, margin, yPos);
+        yPos += 10;
+      }
+
+      // Signatures
+      if (inspection.signatures && inspection.signatures.length > 0) {
+        // Check if we need a new page
+        if (yPos + 30 > pageHeight - margin - 20) {
+          doc.addPage();
+          yPos = margin;
+        }
+
+        doc.setFontSize(14);
+        doc.setFont(undefined, 'bold');
+        doc.text('Signatures', margin, yPos);
+        yPos += 10;
+        doc.setFontSize(10);
+        doc.setFont(undefined, 'normal');
+        
+        inspection.signatures.forEach((sig) => {
+          if (yPos + 30 > pageHeight - margin - 20) {
+            doc.addPage();
+            yPos = margin;
+          }
+          doc.text(`${sig.role === 'inspector' ? 'Inspector' : 'Supervisor'}: ${sig.signedByName}`, margin, yPos);
+          yPos += 5;
+          doc.text(`Signed: ${formatDateUK(sig.signedAt)}`, margin, yPos);
+          yPos += 5;
+          
+          // Try to render signature image if it's base64
+          if (sig.signature && sig.method === 'drawn' && sig.signature.startsWith('data:image')) {
+            try {
+              const imgWidth = 60;
+              const imgHeight = 20;
+              if (yPos + imgHeight > pageHeight - margin - 20) {
+                doc.addPage();
+                yPos = margin;
+              }
+              doc.addImage(sig.signature, 'PNG', margin, yPos, imgWidth, imgHeight);
+              yPos += imgHeight + 5;
+            } catch (e) {
+              doc.text('Signature: [Image - Error loading]', margin, yPos);
+              yPos += 5;
+            }
+          } else if (sig.signature) {
+            doc.text(`Signature: ${sig.signature}`, margin, yPos);
+            yPos += 5;
+          }
+          
+          yPos += 5;
+        });
+      } else {
+        if (yPos + 20 > pageHeight - margin - 20) {
+          doc.addPage();
+          yPos = margin;
+        }
+        doc.setFontSize(14);
+        doc.setFont(undefined, 'bold');
+        doc.text('Signatures', margin, yPos);
+        yPos += 7;
+        doc.setFontSize(10);
+        doc.setFont(undefined, 'normal');
+        doc.text('Signature: —', margin, yPos);
+      }
+
+      // Add page numbers to all pages
+      const totalPages = (doc as any).internal.pages.length;
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        addPageNumber(i, totalPages);
+      }
+
+      // Generate filename
+      const dateStr = formatDateUK(inspection.completedAt || inspection.inspectionDate).replace(/\//g, '-');
+      const filename = `Inspection_${inspection.inspectionCode}_${inspection.assetId || 'NONE'}_${dateStr}.pdf`;
+      
+      // Save PDF
+      doc.save(filename);
+      showToast('PDF downloaded successfully', 'success');
+    } catch (error: any) {
+      console.error('Error generating PDF:', error);
+      showToast(`Failed to generate PDF: ${error.message}`, 'error');
+    }
+  };
+
   const handleSeedDemoSessions = () => {
     const inProgressInspections = allInspections.filter(ins => ins.status === 'InProgress');
     let seeded = 0;
@@ -539,7 +909,7 @@ export function InspectionsListPage() {
   };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-6 space-y-4">
       {/* Testing Controls Panel */}
       {testModeEnabled && (
         <CollapsibleCard
@@ -627,36 +997,48 @@ export function InspectionsListPage() {
           value={summary.total}
           icon={ClipboardCheck}
           accentColor="blue"
+          onClick={() => setWildcardFilter('ALL')}
+          className={wildcardFilter === 'ALL' ? 'ring-2 ring-blue-500 bg-blue-50' : ''}
         />
         <StatCard
           title="Completed This Week"
           value={summary.completedThisWeek}
           icon={CheckCircle}
           accentColor="green"
+          onClick={() => setWildcardFilter(wildcardFilter === 'COMPLETED_WEEK' ? 'ALL' : 'COMPLETED_WEEK')}
+          className={wildcardFilter === 'COMPLETED_WEEK' ? 'ring-2 ring-green-500 bg-green-50' : ''}
         />
         <StatCard
           title="Overdue"
           value={summary.overdue}
           icon={AlertCircle}
           accentColor="red"
+          onClick={() => setWildcardFilter(wildcardFilter === 'OVERDUE' ? 'ALL' : 'OVERDUE')}
+          className={wildcardFilter === 'OVERDUE' ? 'ring-2 ring-red-500 bg-red-50' : ''}
         />
         <StatCard
           title="Failed"
           value={summary.failed}
           icon={XCircle}
           accentColor="red"
+          onClick={() => setWildcardFilter(wildcardFilter === 'FAILED' ? 'ALL' : 'FAILED')}
+          className={wildcardFilter === 'FAILED' ? 'ring-2 ring-red-500 bg-red-50' : ''}
         />
         <StatCard
           title="Open Defects"
           value={summary.openDefectsFromInspections}
           icon={AlertTriangle}
           accentColor="amber"
+          onClick={() => setWildcardFilter(wildcardFilter === 'OPEN_DEFECTS' ? 'ALL' : 'OPEN_DEFECTS')}
+          className={wildcardFilter === 'OPEN_DEFECTS' ? 'ring-2 ring-amber-500 bg-amber-50' : ''}
         />
         <StatCard
           title="Compliance"
           value={summary.complianceInspections}
           icon={Shield}
           accentColor="green"
+          onClick={() => setWildcardFilter(wildcardFilter === 'COMPLIANCE' ? 'ALL' : 'COMPLIANCE')}
+          className={wildcardFilter === 'COMPLIANCE' ? 'ring-2 ring-green-500 bg-green-50' : ''}
         />
       </WildcardGrid>
 
@@ -739,7 +1121,7 @@ export function InspectionsListPage() {
                       label: 'Site / Location',
                       sortable: true,
                       render: (_: any, row: Inspection) => (
-                        <div>
+                        <div className="text-center">
                           <div className="text-sm">{row.siteName || '—'}</div>
                           {row.locationName && (
                             <div className="text-xs text-gray-500">{row.locationName}</div>
@@ -759,7 +1141,7 @@ export function InspectionsListPage() {
                       sortable: true,
                       render: (_: any, row: Inspection) => (
                         <div>
-                          <div className="text-sm">{new Date(row.inspectionDate).toLocaleDateString()}</div>
+                          <div className="text-sm">{formatDateUK(row.inspectionDate)}</div>
                           {row.dueDate && new Date(row.dueDate) < new Date() && row.status !== 'Closed' && (
                             <div className="text-xs text-red-600">Overdue</div>
                           )}
@@ -772,7 +1154,7 @@ export function InspectionsListPage() {
                       sortable: true,
                       render: (_: any, row: Inspection) => (
                         row.completedAt ? (
-                          <div className="text-sm">{new Date(row.completedAt).toLocaleDateString()}</div>
+                          <div className="text-sm">{formatDateUK(row.completedAt)}</div>
                         ) : (
                           <span className="text-gray-400 text-sm">—</span>
                         )
@@ -782,46 +1164,81 @@ export function InspectionsListPage() {
                       key: 'actions',
                       label: 'Actions',
                       sortable: false,
-                      render: (_: any, row: Inspection) => (
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
+                      render: (_: any, row: Inspection) => {
+                        // Get or create ref for this row's menu button
+                        if (!menuRefs.current[row.id]) {
+                          menuRefs.current[row.id] = { current: null };
+                        }
+                        const menuRef = menuRefs.current[row.id];
+                        
+                        const menuItems = [
+                          {
+                            label: 'View',
+                            icon: Eye,
+                            onClick: () => {
                               navigate(`/inspections/${row.id}/checklist`);
-                            }}
-                            className="text-blue-600 hover:text-blue-700 text-sm"
-                            title="View"
-                          >
-                            View
-                          </button>
-                          {row.status === 'InProgress' && (
+                            },
+                          },
+                        ];
+                        
+                        if (row.status === 'Draft') {
+                          menuItems.push({
+                            label: 'Start',
+                            icon: Play,
+                            onClick: () => {
+                              handleStartInspection(row.id, row.inspectionCode);
+                            },
+                          });
+                        }
+                        
+                        if (row.status === 'InProgress') {
+                          menuItems.push({
+                            label: 'Continue',
+                            icon: Play,
+                            onClick: () => {
+                              handleContinueInspection(row.id, row.inspectionCode);
+                            },
+                          });
+                        }
+                        
+                        // PDF download available for all, but preferred for Closed
+                        menuItems.push({
+                          label: row.status === 'Closed' ? 'Download PDF' : 'Download PDF (Draft)',
+                          icon: Download,
+                          onClick: () => {
+                            handleDownloadPDF(row);
+                          },
+                        });
+                        
+                        return (
+                          <div className="relative">
                             <button
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                handleContinueInspection(row.id, row.inspectionCode);
+                              ref={(el) => {
+                                if (menuRef) {
+                                  menuRef.current = el;
+                                }
                               }}
-                              className="text-green-600 hover:text-green-700 text-sm font-medium"
-                              title="Continue"
-                            >
-                              Continue
-                            </button>
-                          )}
-                          {row.status === 'Draft' && (
-                            <button
                               onClick={(e) => {
-                                e.preventDefault();
                                 e.stopPropagation();
-                                handleStartInspection(row.id, row.inspectionCode);
+                                setOpenMenuId(openMenuId === row.id ? null : row.id);
                               }}
-                              className="text-blue-600 hover:text-blue-700 text-sm font-medium"
-                              title="Start"
+                              className="p-1 rounded hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              aria-label="Actions menu"
                             >
-                              Start
+                              <MoreVertical className="w-5 h-5 text-gray-600" />
                             </button>
-                          )}
-                        </div>
-                      ),
+                            {menuRef && (
+                              <DropdownMenu
+                                isOpen={openMenuId === row.id}
+                                onClose={() => setOpenMenuId(null)}
+                                anchorRef={menuRef as React.RefObject<HTMLElement>}
+                                items={menuItems}
+                                width="w-48"
+                              />
+                            )}
+                          </div>
+                        );
+                      },
                     },
                     {
                       key: 'defectsCount',

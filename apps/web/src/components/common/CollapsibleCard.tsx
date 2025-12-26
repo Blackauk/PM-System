@@ -80,7 +80,7 @@ export function CollapsibleCard({
         </div>
         <div
           className={`overflow-hidden transition-all duration-300 ease-in-out ${
-            isExpanded ? 'max-h-[2000px] opacity-100 mt-4' : 'max-h-0 opacity-0'
+            isExpanded ? 'max-h-[2000px] opacity-100 mt-2' : 'max-h-0 opacity-0'
           }`}
           aria-hidden={!isExpanded}
         >

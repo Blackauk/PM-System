@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useOffline } from '../../../contexts/OfflineContext';
@@ -20,9 +20,11 @@ import { FilterPanel } from '../../../components/common/FilterPanel';
 import { FilterChip } from '../../../components/common/FilterChip';
 import { Modal } from '../../../components/common/Modal';
 import { Select } from '../../../components/common/Select';
-import { ChevronLeft, ChevronRight, AlertTriangle, X, CheckCircle, XCircle, TestTube, MoreVertical, ClipboardList, Clock, AlertCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, AlertTriangle, X, CheckCircle, XCircle, TestTube, MoreVertical, ClipboardList, Clock, AlertCircle, Eye, Shield, ArrowUp, ArrowDown, ArrowLeftRight } from 'lucide-react';
 import { StatCard } from '../../../components/common/StatCard';
 import { WildcardGrid } from '../../../components/common/WildcardGrid';
+import { DropdownMenu } from '../../../components/common/DropdownMenu';
+import { formatDateUK } from '../../../lib/formatters';
 import { canRaiseDefect } from '../lib/permissions';
 import { mockSites } from '../../assets/services';
 import { initialSeedDefects, getNextDefectCode, getRandomAsset, getRandomUser, getRandomSeverity } from '../lib/mockDefects';
@@ -76,10 +78,42 @@ export function DefectsListPage() {
 
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState<DefectFilter>(() => {
+    // Check URL params first, then localStorage
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlStatus = urlParams.get('status');
+    const urlOverdue = urlParams.get('overdue') === 'true';
+    const urlFromInspection = urlParams.get('fromInspection') === 'true';
+    const urlSeverities = urlParams.getAll('severity');
+    
+    const urlFilters: DefectFilter = {};
+    if (urlStatus) {
+      urlFilters.status = urlStatus as DefectStatus;
+    }
+    if (urlOverdue) {
+      urlFilters.showOverdue = true;
+    }
+    if (urlFromInspection) {
+      urlFilters.showFromInspection = true;
+    }
+    if (urlSeverities.length > 0) {
+      urlFilters.severity = urlSeverities.length === 1 ? urlSeverities[0] as DefectSeverity : urlSeverities as DefectSeverity[];
+    }
+    
+    // If URL params exist, use them; otherwise use localStorage
+    if (Object.keys(urlFilters).length > 0) {
+      return urlFilters;
+    }
+    
     const saved = localStorage.getItem('defects-filters');
     return saved ? JSON.parse(saved) : {};
   });
   const [activeWildcard, setActiveWildcard] = useState<string | null>(() => {
+    // Check URL params first
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('overdue') === 'true') {
+      return 'overdue';
+    }
+    
     const saved = localStorage.getItem('defects-active-wildcard');
     return saved || null;
   });
@@ -87,26 +121,21 @@ export function DefectsListPage() {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [tempFilters, setTempFilters] = useState<DefectFilter>(filters);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const menuRefs = useRef<Record<string, React.RefObject<HTMLButtonElement | null>>>({});
+  const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
+  const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
+  const [titleColumnWidth, setTitleColumnWidth] = useState(() => {
+    const saved = localStorage.getItem('defects-title-column-width');
+    return saved ? Number(saved) : 300;
+  });
+  const [isResizing, setIsResizing] = useState(false);
+  const resizeStartX = useRef<number>(0);
+  const resizeStartWidth = useRef<number>(300);
   
   // Test panel state
   const [isTestPanelOpen, setIsTestPanelOpen] = useState(false);
   const [testEvents, setTestEvents] = useState<TestEvent[]>([]);
-  
-  // Defect Alerts sidebar state
-  const [isAlertsCollapsed, setIsAlertsCollapsed] = useState(() => {
-    const saved = localStorage.getItem('defect-alerts-collapsed');
-    return saved === 'true';
-  });
-  const [alertsPanelWidth, setAlertsPanelWidth] = useState(() => {
-    const saved = localStorage.getItem('defect-alerts-width');
-    return saved ? Number(saved) : 360;
-  });
-  
-  const handleToggleAlerts = () => {
-    const newState = !isAlertsCollapsed;
-    setIsAlertsCollapsed(newState);
-    localStorage.setItem('defect-alerts-collapsed', String(newState));
-  };
 
   useEffect(() => {
     if (localDefects.length === 0) {
@@ -117,6 +146,23 @@ export function DefectsListPage() {
   // Calculate dynamic summary from local defects
   const summary = useMemo(() => {
     const now = new Date();
+    const openDefects = defects.filter(d => d.status !== 'Closed');
+    
+    // Count assets with 2+ open defects
+    const assetDefectCounts = new Map<string, number>();
+    openDefects.forEach(d => {
+      if (d.assetId) {
+        const count = assetDefectCounts.get(d.assetId) || 0;
+        assetDefectCounts.set(d.assetId, count + 1);
+      }
+    });
+    const multiDefectAssets = Array.from(assetDefectCounts.values()).filter(count => count >= 2).length;
+    
+    // High severity open defects
+    const highSeverityOpen = openDefects.filter(d => 
+      d.severity === 'High' || d.severity === 'Critical' || d.severity === 'Major'
+    ).length;
+    
     return {
       total: defects.length,
       open: defects.filter(d => d.status === 'Open' || d.status === 'InProgress' || d.status === 'Acknowledged').length,
@@ -129,6 +175,8 @@ export function DefectsListPage() {
         return false;
       }).length,
       unsafe: defects.filter(d => d.unsafeDoNotUse && d.status !== 'Closed').length,
+      highSeverityOpen,
+      multiDefectAssets,
     };
   }, [defects]);
 
@@ -184,6 +232,9 @@ export function DefectsListPage() {
         const date = d.targetRectificationDate ? new Date(d.targetRectificationDate) : null;
         return date && date <= new Date(filters.dateTo!);
       });
+    }
+    if (filters.showFromInspection) {
+      filtered = filtered.filter((d) => !!d.inspectionId);
     }
 
     // Search
@@ -251,88 +302,6 @@ export function DefectsListPage() {
     return count;
   }, [filters]);
 
-  // Defect Alerts
-  const defectAlerts = useMemo(() => {
-    const alerts: Array<{ type: string; title: string; detail: string; icon: React.ReactNode; onClick: () => void }> = [];
-    const now = new Date();
-
-    // Unsafe Asset Alert
-    const unsafeDefects = defects.filter(d => d.unsafeDoNotUse && d.status !== 'Closed');
-    if (unsafeDefects.length > 0) {
-      alerts.push({
-        type: 'unsafe',
-        title: 'Unsafe Assets',
-        detail: `${unsafeDefects.length} open unsafe defect${unsafeDefects.length !== 1 ? 's' : ''}`,
-        icon: <AlertTriangle className="w-5 h-5 text-red-600" />,
-        onClick: () => {
-          setActiveWildcard('unsafe');
-          handleWildcardClick('unsafe');
-        },
-      });
-    }
-
-    // Overdue Defect Alert
-    const overdueDefects = defects.filter(d => {
-      if (d.status === 'Closed') return false;
-      if (d.status === 'Overdue') return true;
-      if (d.targetRectificationDate) {
-        return new Date(d.targetRectificationDate) < now;
-      }
-      return false;
-    });
-    if (overdueDefects.length > 0) {
-      alerts.push({
-        type: 'overdue',
-        title: 'Overdue Defects',
-        detail: `${overdueDefects.length} defect${overdueDefects.length !== 1 ? 's' : ''} past target date`,
-        icon: <XCircle className="w-5 h-5 text-red-600" />,
-        onClick: () => {
-          setActiveWildcard('overdue');
-          handleWildcardClick('overdue');
-        },
-      });
-    }
-
-    // Multiple Defects on Same Asset
-    const assetDefectCounts = new Map<string, number>();
-    defects.filter(d => d.status !== 'Closed' && d.assetId).forEach(d => {
-      const count = assetDefectCounts.get(d.assetId!) || 0;
-      assetDefectCounts.set(d.assetId!, count + 1);
-    });
-    const multiDefectAssets = Array.from(assetDefectCounts.entries()).filter(([_, count]) => count >= 2);
-    if (multiDefectAssets.length > 0) {
-      alerts.push({
-        type: 'multi-asset',
-        title: 'Multiple Defects on Assets',
-        detail: `${multiDefectAssets.length} asset${multiDefectAssets.length !== 1 ? 's' : ''} with 2+ open defects`,
-        icon: <AlertTriangle className="w-5 h-5 text-orange-600" />,
-        onClick: () => {
-          // Filter by first asset with multiple defects
-          const assetId = multiDefectAssets[0][0];
-          handleFilterChange('assetId', assetId);
-        },
-      });
-    }
-
-    // High Severity Open Defects
-    const highSeverityOpen = defects.filter(d => 
-      (d.severity === 'High' || d.severity === 'Critical' || d.severity === 'Major') && 
-      d.status !== 'Closed'
-    );
-    if (highSeverityOpen.length > 0) {
-      alerts.push({
-        type: 'high-severity',
-        title: 'High Severity Open',
-        detail: `${highSeverityOpen.length} open high severity defect${highSeverityOpen.length !== 1 ? 's' : ''}`,
-        icon: <AlertTriangle className="w-5 h-5 text-orange-600" />,
-        onClick: () => {
-          handleFilterChange('severity', ['High', 'Critical', 'Major']);
-        },
-      });
-    }
-
-    return alerts;
-  }, [defects]);
 
   // Test Panel Functions
   const addTestEvent = (message: string) => {
@@ -484,7 +453,68 @@ export function DefectsListPage() {
 
   const canCreate = canRaiseDefect(user?.role);
 
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsResizing(true);
+    resizeStartX.current = e.clientX;
+    resizeStartWidth.current = titleColumnWidth;
+    let currentWidth = titleColumnWidth;
+    
+    const handleMove = (moveEvent: MouseEvent) => {
+      const diff = moveEvent.clientX - resizeStartX.current;
+      const newWidth = Math.max(180, Math.min(600, resizeStartWidth.current + diff));
+      currentWidth = newWidth;
+      setTitleColumnWidth(newWidth);
+    };
+    
+    const handleEnd = () => {
+      setIsResizing(false);
+      // Save final width
+      localStorage.setItem('defects-title-column-width', String(currentWidth));
+      document.removeEventListener('mousemove', handleMove);
+      document.removeEventListener('mouseup', handleEnd);
+    };
+    
+    document.addEventListener('mousemove', handleMove);
+    document.addEventListener('mouseup', handleEnd);
+  }, [titleColumnWidth]);
+  
+  // Save width when it changes (debounced)
+  useEffect(() => {
+    if (!isResizing && titleColumnWidth > 0) {
+      const timeoutId = setTimeout(() => {
+        localStorage.setItem('defects-title-column-width', String(titleColumnWidth));
+      }, 300);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [titleColumnWidth, isResizing]);
+
+  const handleToggleExpand = useCallback((rowId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setExpandedRowId(expandedRowId === rowId ? null : rowId);
+  }, [expandedRowId]);
+
   const columns = useMemo(() => [
+    {
+      key: 'expand',
+      label: '',
+      sortable: false,
+      width: 40,
+      render: (_: any, row: Defect) => (
+        <button
+          onClick={(e) => handleToggleExpand(row.id, e)}
+          className="flex items-center justify-center w-6 h-6 text-gray-400 hover:text-gray-600 transition-colors"
+          title={expandedRowId === row.id ? 'Collapse description' : 'Expand description'}
+        >
+          {expandedRowId === row.id ? (
+            <ChevronDown className="w-4 h-4" />
+          ) : (
+            <ChevronRight className="w-4 h-4" />
+          )}
+        </button>
+      ),
+    },
     {
       key: 'defectCode',
       label: 'Defect Code',
@@ -497,12 +527,30 @@ export function DefectsListPage() {
       key: 'title',
       label: 'Title',
       sortable: true,
+      width: titleColumnWidth,
+      renderHeader: (sortKey: string | null, sortDirection: 'asc' | 'desc' | null) => (
+          <div className="flex items-center gap-2 group relative">
+            <span>Title</span>
+            <div
+              className="absolute right-0 top-0 bottom-0 w-1 bg-gray-300 hover:bg-blue-500 cursor-col-resize opacity-0 group-hover:opacity-100 transition-opacity z-10"
+              onMouseDown={handleResizeStart}
+              title="Drag to resize"
+              style={{ userSelect: 'none' }}
+            />
+            <span className="text-gray-400">
+              {sortKey === 'title' && sortDirection === 'asc' ? (
+                <ArrowUp className="w-4 h-4" />
+              ) : sortKey === 'title' && sortDirection === 'desc' ? (
+                <ArrowDown className="w-4 h-4" />
+              ) : (
+                <ArrowLeftRight className="w-3 h-3 opacity-30" />
+              )}
+            </span>
+          </div>
+        ),
       render: (_: any, row: Defect) => (
-        <div>
-          <div className="font-medium text-gray-900">{row.title || 'Untitled'}</div>
-          {row.description && (
-            <div className="text-xs text-gray-500 line-clamp-1">{row.description}</div>
-          )}
+        <div className="truncate" title={row.title || 'Untitled'}>
+          <div className="font-medium text-gray-900 truncate">{row.title || 'Untitled'}</div>
         </div>
       ),
     },
@@ -565,7 +613,7 @@ export function DefectsListPage() {
       label: 'Created',
       sortable: true,
       render: (_: any, row: Defect) => (
-        <div className="text-sm">{new Date(row.createdAt).toLocaleDateString()}</div>
+        <div className="text-sm">{formatDateUK(row.createdAt)}</div>
       ),
     },
     {
@@ -578,7 +626,7 @@ export function DefectsListPage() {
           row.status !== 'Closed';
         return row.targetRectificationDate ? (
           <div className={`text-sm ${isOverdue ? 'text-red-600 font-medium' : ''}`}>
-            {new Date(row.targetRectificationDate).toLocaleDateString()}
+            {formatDateUK(row.targetRectificationDate)}
           </div>
         ) : (
           <span className="text-gray-400 text-sm">—</span>
@@ -589,51 +637,91 @@ export function DefectsListPage() {
       key: 'actions',
       label: 'Actions',
       sortable: false,
-      render: (_: any, row: Defect) => (
-        <div className="flex items-center gap-1">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
+      render: (_: any, row: Defect) => {
+        // Get or create ref for this row's menu button
+        if (!menuRefs.current[row.id]) {
+          menuRefs.current[row.id] = { current: null };
+        }
+        const menuRef = menuRefs.current[row.id];
+        
+        const menuItems = [
+          {
+            label: 'View',
+            icon: Eye,
+            onClick: () => {
               navigate(`/defects/${row.id}`);
-            }}
-            className="px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded"
-            title="View"
-          >
-            View
-          </button>
-          {row.status !== 'Closed' && (
-            <>
+            },
+          },
+        ];
+        
+        if (row.status !== 'Closed') {
+          menuItems.push({
+            label: 'Close',
+            icon: CheckCircle,
+            onClick: () => {
+              handleCloseDefect(row.id);
+            },
+          });
+        }
+        
+        menuItems.push({
+          label: row.unsafeDoNotUse ? 'Mark Safe' : 'Mark Unsafe',
+          icon: row.unsafeDoNotUse ? Shield : AlertTriangle,
+          onClick: () => {
+            handleToggleUnsafeDefect(row.id);
+          },
+        });
+        
+        return (
+          <div className="relative flex items-center gap-2">
+            {/* Hover View Action */}
+            {hoveredRowId === row.id && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleCloseDefect(row.id);
+                  navigate(`/defects/${row.id}`);
                 }}
-                className="px-2 py-1 text-xs text-green-600 hover:bg-green-50 rounded"
-                title="Close"
+                className="flex items-center gap-1 px-2 py-1 text-sm text-blue-600 hover:text-blue-700 hover:underline transition-opacity"
+                title="View defect"
               >
-                Close
+                <Eye className="w-4 h-4" />
+                <span>View</span>
               </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleToggleUnsafeDefect(row.id);
-                }}
-                className="px-2 py-1 text-xs text-orange-600 hover:bg-orange-50 rounded"
-                title="Toggle Unsafe"
-              >
-                {row.unsafeDoNotUse ? 'Safe' : 'Unsafe'}
-              </button>
-            </>
-          )}
-        </div>
-      ),
+            )}
+            <button
+              ref={(el) => {
+                if (menuRef) {
+                  menuRef.current = el;
+                }
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setOpenMenuId(openMenuId === row.id ? null : row.id);
+              }}
+              className="p-1 rounded hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              aria-label="Actions menu"
+            >
+              <MoreVertical className="w-5 h-5 text-gray-600" />
+            </button>
+            {menuRef && (
+              <DropdownMenu
+                isOpen={openMenuId === row.id}
+                onClose={() => setOpenMenuId(null)}
+                anchorRef={menuRef as React.RefObject<HTMLElement>}
+                items={menuItems}
+                width="w-48"
+              />
+            )}
+          </div>
+        );
+      },
     },
-  ], [navigate]);
+  ], [navigate, titleColumnWidth, handleResizeStart, openMenuId, expandedRowId, hoveredRowId, handleToggleExpand]);
 
   const hasActiveFilters = activeFilterCount > 0 || activeWildcard !== null;
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-6 space-y-4">
       {/* Command Bar - Status badges only */}
       <div className="flex items-center justify-end gap-2">
         {!isOnline && (
@@ -649,7 +737,7 @@ export function DefectsListPage() {
       </div>
 
       {/* Summary Cards (Wildcards) - Full Width */}
-      <WildcardGrid columns={4}>
+      <WildcardGrid columns={6}>
         <StatCard
           title="Total Defects"
           value={summary.total}
@@ -672,15 +760,48 @@ export function DefectsListPage() {
           icon={AlertCircle}
           onClick={() => handleWildcardClick('overdue')}
           accentColor="red"
-          className={activeWildcard === 'overdue' ? 'ring-2 ring-blue-500 bg-blue-50' : ''}
+          className={activeWildcard === 'overdue' ? 'ring-2 ring-red-500 bg-red-50' : ''}
         />
         <StatCard
-          title="Unsafe / Do Not Use"
+          title="Unsafe Assets"
           value={summary.unsafe}
           icon={AlertTriangle}
           onClick={() => handleWildcardClick('unsafe')}
           accentColor="red"
-          className={activeWildcard === 'unsafe' ? 'ring-2 ring-blue-500 bg-blue-50' : ''}
+          className={activeWildcard === 'unsafe' ? 'ring-2 ring-red-500 bg-red-50' : ''}
+        />
+        <StatCard
+          title="High Severity Open"
+          value={summary.highSeverityOpen}
+          icon={Shield}
+          onClick={() => {
+            handleFilterChange('severity', ['High', 'Critical', 'Major']);
+            setActiveWildcard(null);
+          }}
+          accentColor="amber"
+          className={filters.severity && (Array.isArray(filters.severity) ? filters.severity.some(s => ['High', 'Critical', 'Major'].includes(s)) : ['High', 'Critical', 'Major'].includes(filters.severity)) ? 'ring-2 ring-amber-500 bg-amber-50' : ''}
+        />
+        <StatCard
+          title="Assets with 2+ Defects"
+          value={summary.multiDefectAssets}
+          icon={AlertTriangle}
+          onClick={() => {
+            // Filter by assets with multiple defects
+            const assetDefectCounts = new Map<string, number>();
+            defects.filter(d => d.status !== 'Closed' && d.assetId).forEach(d => {
+              const count = assetDefectCounts.get(d.assetId!) || 0;
+              assetDefectCounts.set(d.assetId!, count + 1);
+            });
+            const multiDefectAssetIds = Array.from(assetDefectCounts.entries())
+              .filter(([_, count]) => count >= 2)
+              .map(([assetId]) => assetId);
+            // Note: This is a simplified filter - in a real app you'd need a better way to filter by multiple asset IDs
+            if (multiDefectAssetIds.length > 0) {
+              // For now, just show a message or filter by first asset
+              // In a real implementation, you'd need to support multi-asset filtering
+            }
+          }}
+          accentColor="amber"
         />
       </WildcardGrid>
 
@@ -846,63 +967,35 @@ export function DefectsListPage() {
         </div>
       </FilterPanel>
 
-      {/* Main Content with Grid Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Column - Table */}
-        <div className="lg:col-span-8 xl:col-span-9 space-y-6">
-          {loading ? (
-            <Card>
-              <div className="p-6 text-center py-8 text-gray-500">Loading defects...</div>
-            </Card>
-          ) : (
-            <ListPageTable
-              searchValue={search}
-              onSearchChange={setSearch}
-              searchPlaceholder="Search by defect code, title, asset, assigned to…"
-              onFilterClick={() => setShowFilterPanel(true)}
-              activeFilterCount={activeFilterCount}
-              filterButtonRef={filterButtonRef}
-              columns={columns}
-              data={filteredDefects}
-              onRowClick={(row) => navigate(`/defects/${row.id}`)}
-              showingText={`Showing ${filteredDefects.length} defect${filteredDefects.length !== 1 ? 's' : ''}`}
-              emptyMessage="No defects found matching your criteria"
-            />
-          )}
-        </div>
-
-        {/* Right Column - Alerts */}
-        <div className="lg:col-span-4 xl:col-span-3">
-          <div className="sticky top-6">
-            <Card>
-              <div className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-semibold text-gray-900">Defect Alerts</h2>
-                </div>
-                <div className="space-y-3 max-h-[calc(100vh-12rem)] overflow-y-auto">
-                  {defectAlerts.map((alert, index) => (
-                    <div
-                      key={index}
-                      className="p-3 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors"
-                      onClick={alert.onClick}
-                    >
-                      <div className="flex items-start gap-2 mb-1">
-                        {alert.icon}
-                        <div className="flex-1">
-                          <div className="font-medium text-sm text-gray-900">{alert.title}</div>
-                          <div className="text-xs text-gray-600 mt-0.5">{alert.detail}</div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                  {defectAlerts.length === 0 && (
-                    <div className="text-center py-4 text-sm text-gray-500">No alerts</div>
-                  )}
-                </div>
+      {/* Main Content - Full Width Table */}
+      <div className="space-y-6">
+        {loading ? (
+          <Card>
+            <div className="p-6 text-center py-8 text-gray-500">Loading defects...</div>
+          </Card>
+        ) : (
+          <ListPageTable
+            searchValue={search}
+            onSearchChange={setSearch}
+            searchPlaceholder="Search by defect code, title, asset, assigned to…"
+            onFilterClick={() => setShowFilterPanel(true)}
+            activeFilterCount={activeFilterCount}
+            filterButtonRef={filterButtonRef}
+            columns={columns}
+            data={filteredDefects}
+            onRowClick={(row) => navigate(`/defects/${row.id}`)}
+            expandedRowId={expandedRowId}
+            renderExpandedRow={(row: Defect) => (
+              <div className="text-sm text-gray-600">
+                <div className="font-medium text-gray-700 mb-1">Description:</div>
+                <div className="whitespace-pre-wrap">{row.description || 'No description provided'}</div>
               </div>
-            </Card>
-          </div>
-        </div>
+            )}
+            onRowHover={setHoveredRowId}
+            showingText={`Showing ${filteredDefects.length} defect${filteredDefects.length !== 1 ? 's' : ''}`}
+            emptyMessage="No defects found matching your criteria"
+          />
+        )}
       </div>
       
       {/* Floating Filter Panel (for Sort) */}

@@ -4,8 +4,10 @@ import { useAuth } from '../../../contexts/AuthContext';
 import { Card } from '../../../components/common/Card';
 import { Badge } from '../../../components/common/Badge';
 import { Button } from '../../../components/common/Button';
+import { Input } from '../../../components/common/Input';
 import { Tabs } from '../../../components/common/Tabs';
 import { Table, TableHeader, TableRow, TableHeaderCell, TableCell } from '../../../components/common/Table';
+import { formatDateUK } from '../../../lib/formatters';
 import { CreateWorkOrderModal } from '../../work-orders/components/CreateWorkOrderModal';
 import { AssetSummaryHeader } from '../components/AssetSummaryHeader';
 import { OverviewCards } from '../components/OverviewCards';
@@ -16,6 +18,7 @@ import { ChangeStatusModal } from '../components/ChangeStatusModal';
 import { EditAssetModal } from '../components/EditAssetModal';
 import { AddComplianceItemModal } from '../components/AddComplianceItemModal';
 import { MarkComplianceDoneModal } from '../components/MarkComplianceDoneModal';
+import { UpdateHoursModal } from '../components/UpdateHoursModal';
 import {
   getAssetById,
   getComplianceItemsByAssetId,
@@ -54,11 +57,14 @@ export function AssetDetailPage() {
   const [isEditAssetModalOpen, setIsEditAssetModalOpen] = useState(false);
   const [isAddComplianceModalOpen, setIsAddComplianceModalOpen] = useState(false);
   const [isMarkComplianceDoneModalOpen, setIsMarkComplianceDoneModalOpen] = useState(false);
+  const [isUpdateHoursModalOpen, setIsUpdateHoursModalOpen] = useState(false);
   const [selectedComplianceItem, setSelectedComplianceItem] = useState<any>(null);
   const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'overview');
   const [documents, setDocuments] = useState<AssetDocument[]>([]);
   const [assetState, setAssetState] = useState<Asset | undefined>(undefined);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [activitySearch, setActivitySearch] = useState('');
+  const [activityTypeFilter, setActivityTypeFilter] = useState<'all' | 'inspections' | 'work-orders' | 'defects'>('all');
 
   const asset = useMemo(() => {
     const a = id ? getAssetById(id) : undefined;
@@ -285,6 +291,122 @@ export function AssetDetailPage() {
     }
   };
 
+  // Normalize activity log entries for table display
+  interface ActivityTableRow {
+    id: string;
+    date: string;
+    time: string;
+    event: string;
+    refLabel: string | null;
+    refId: string | null;
+    summary: string;
+    userName: string;
+    kind: 'inspection' | 'work-order' | 'defect' | 'meter-reading' | 'other';
+    timestamp: string;
+    meterReading?: string; // Formatted meter reading (e.g., "2520 hours" or "18,450 mi")
+  }
+
+  const normalizeActivityLog = (entries: typeof activityLog): ActivityTableRow[] => {
+    return entries.map((entry) => {
+      const date = new Date(entry.timestamp);
+      const dateStr = formatDateUK(date);
+      const timeStr = date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+      
+      // Extract reference from details (INS-*, WO-*, DEF-*)
+      const insMatch = entry.details?.match(/INS-[\w-]+/i);
+      const woMatch = entry.details?.match(/WO-[\w-]+/i);
+      const defMatch = entry.details?.match(/DEF-[\w-]+/i);
+      
+      let refLabel: string | null = null;
+      let refId: string | null = null;
+      let kind: 'inspection' | 'work-order' | 'defect' | 'meter-reading' | 'other' = 'other';
+      
+      if (insMatch) {
+        refLabel = insMatch[0];
+        refId = insMatch[0];
+        kind = 'inspection';
+      } else if (woMatch) {
+        refLabel = woMatch[0];
+        refId = woMatch[0];
+        kind = 'work-order';
+      } else if (defMatch) {
+        refLabel = defMatch[0];
+        refId = defMatch[0];
+        kind = 'defect';
+      }
+      
+      // Determine kind from action if no reference found
+      if (kind === 'other') {
+        if (entry.action.toLowerCase().includes('meter reading')) {
+          kind = 'meter-reading';
+        } else if (entry.action.toLowerCase().includes('inspection')) {
+          kind = 'inspection';
+        } else if (entry.action.toLowerCase().includes('work order')) {
+          kind = 'work-order';
+        } else if (entry.action.toLowerCase().includes('defect')) {
+          kind = 'defect';
+        }
+      }
+      
+      // Format meter reading
+      let meterReading: string | undefined;
+      if (entry.meterReadingAtEvent !== undefined && entry.meterReadingUnit) {
+        const unit = entry.meterReadingUnit === 'hours' ? 'hours' : entry.meterReadingUnit === 'miles' ? 'mi' : 'km';
+        meterReading = `${entry.meterReadingAtEvent.toLocaleString()} ${unit}`;
+      } else if (entry.previousReading !== undefined && entry.newReading !== undefined && entry.meterReadingUnit) {
+        // For meter reading updated entries, show the new reading
+        const unit = entry.meterReadingUnit === 'hours' ? 'hours' : entry.meterReadingUnit === 'miles' ? 'mi' : 'km';
+        meterReading = `${entry.newReading.toLocaleString()} ${unit}`;
+      }
+      
+      return {
+        id: entry.id,
+        date: dateStr,
+        time: timeStr,
+        event: entry.action,
+        refLabel,
+        refId,
+        summary: entry.details || entry.action,
+        userName: entry.user,
+        kind,
+        timestamp: entry.timestamp,
+        meterReading,
+      };
+    });
+  };
+
+  // Filter and sort activity log
+  const filteredActivityLog = useMemo(() => {
+    const normalized = normalizeActivityLog(activityLog);
+    
+    // Apply type filter
+    let filtered = normalized;
+    if (activityTypeFilter !== 'all') {
+      const typeMap: Record<string, ActivityTableRow['kind']> = {
+        'inspections': 'inspection',
+        'work-orders': 'work-order',
+        'defects': 'defect',
+      };
+      filtered = normalized.filter(row => row.kind === typeMap[activityTypeFilter]);
+    }
+    
+    // Apply search
+    if (activitySearch) {
+      const searchLower = activitySearch.toLowerCase();
+      filtered = filtered.filter(row =>
+        row.summary.toLowerCase().includes(searchLower) ||
+        (row.refLabel && row.refLabel.toLowerCase().includes(searchLower)) ||
+        row.userName.toLowerCase().includes(searchLower) ||
+        row.event.toLowerCase().includes(searchLower)
+      );
+    }
+    
+    // Sort by timestamp (newest first)
+    return filtered.sort((a, b) => {
+      return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+    });
+  }, [activityLog, activityTypeFilter, activitySearch]);
+
   const tabs = [
     {
       id: 'overview',
@@ -294,7 +416,7 @@ export function AssetDetailPage() {
           asset={asset}
           onChangeLocation={() => showToast('Change location functionality coming soon', 'info')}
           onChangeStatus={() => setIsChangeStatusModalOpen(true)}
-          onUpdateHours={() => showToast('Update hours functionality coming soon', 'info')}
+          onUpdateHours={() => setIsUpdateHoursModalOpen(true)}
         />
       ),
     },
@@ -764,32 +886,163 @@ export function AssetDetailPage() {
         <Card>
           <div className="p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Activity Log</h3>
-            {activityLog.length > 0 ? (
-              <div className="space-y-3">
-                {activityLog.map((entry) => (
-                  <div key={entry.id} className="border-l-2 border-gray-200 pl-4 py-2">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="font-medium text-gray-900">{entry.action}</div>
-                        {entry.details && (
-                          <div className="text-sm text-gray-600 mt-1">{entry.details}</div>
-                        )}
-                      </div>
-                      <div className="text-right ml-4">
-                        <div className="text-sm text-gray-500">
-                          {new Date(entry.timestamp).toLocaleDateString()}
-                        </div>
-                        <div className="text-xs text-gray-400">
-                          {new Date(entry.timestamp).toLocaleTimeString()}
-                        </div>
-                        <div className="text-sm text-gray-600 mt-1">{entry.user}</div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+            
+            {/* Search and Filter Controls */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
+              <div className="w-full sm:w-auto sm:flex-1">
+                <Input
+                  type="text"
+                  placeholder="Search by summary, reference, user..."
+                  value={activitySearch}
+                  onChange={(e) => setActivitySearch(e.target.value)}
+                  className="w-full"
+                />
+              </div>
+              <div className="flex gap-1 border border-gray-300 rounded-lg p-1">
+                <button
+                  onClick={() => setActivityTypeFilter('all')}
+                  className={`px-3 py-1 text-sm rounded ${
+                    activityTypeFilter === 'all'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-700 hover:bg-gray-100'
+                  }`}
+                >
+                  All
+                </button>
+                <button
+                  onClick={() => setActivityTypeFilter('inspections')}
+                  className={`px-3 py-1 text-sm rounded ${
+                    activityTypeFilter === 'inspections'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-700 hover:bg-gray-100'
+                  }`}
+                >
+                  Inspections
+                </button>
+                <button
+                  onClick={() => setActivityTypeFilter('work-orders')}
+                  className={`px-3 py-1 text-sm rounded ${
+                    activityTypeFilter === 'work-orders'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-700 hover:bg-gray-100'
+                  }`}
+                >
+                  Work Orders
+                </button>
+                <button
+                  onClick={() => setActivityTypeFilter('defects')}
+                  className={`px-3 py-1 text-sm rounded ${
+                    activityTypeFilter === 'defects'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-700 hover:bg-gray-100'
+                  }`}
+                >
+                  Defects
+                </button>
+              </div>
+            </div>
+
+            {/* Activity Log Table */}
+            {filteredActivityLog.length > 0 ? (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHeaderCell>Date</TableHeaderCell>
+                      <TableHeaderCell className="hidden md:table-cell">Time</TableHeaderCell>
+                      <TableHeaderCell>Event</TableHeaderCell>
+                      <TableHeaderCell>Reference</TableHeaderCell>
+                      <TableHeaderCell>Summary</TableHeaderCell>
+                      <TableHeaderCell className="hidden lg:table-cell">Meter Reading</TableHeaderCell>
+                      <TableHeaderCell className="hidden md:table-cell">User</TableHeaderCell>
+                    </TableRow>
+                  </TableHeader>
+                  <tbody>
+                    {filteredActivityLog.map((row) => {
+                      const handleRowClick = () => {
+                        if (!row.refId) return;
+                        
+                        if (row.kind === 'inspection') {
+                          // Try to find inspection by code
+                          const inspection = inspections.find(
+                            (insp) => insp.inspectionCode === row.refId
+                          );
+                          if (inspection) {
+                            navigate(`/inspections/${inspection.id}/checklist`);
+                          } else {
+                            // Fallback to list with search
+                            navigate(`/inspections?search=${row.refId}`);
+                          }
+                        } else if (row.kind === 'work-order') {
+                          // Try to find work order by ID (codes like WO-000123 might match id)
+                          const workOrder = workOrders.find(
+                            (wo) => wo.id === row.refId || wo.id?.includes(row.refId)
+                          );
+                          if (workOrder) {
+                            navigate(`/work-orders/${workOrder.id}`);
+                          } else {
+                            // Fallback to list with search
+                            navigate(`/work-orders?search=${row.refId}`);
+                          }
+                        } else if (row.kind === 'defect') {
+                          // Try to find defect by defectId
+                          const defect = defects.find(
+                            (def) => def.defectId === row.refId
+                          );
+                          if (defect) {
+                            navigate(`/defects/${defect.id}`);
+                          } else {
+                            // Fallback to list with search
+                            navigate(`/defects?search=${row.refId}`);
+                          }
+                        }
+                      };
+                      
+                      return (
+                        <TableRow
+                          key={row.id}
+                          onClick={handleRowClick}
+                          className={row.refId ? 'cursor-pointer hover:bg-gray-50' : ''}
+                        >
+                          <TableCell className="whitespace-nowrap">{row.date}</TableCell>
+                          <TableCell className="hidden md:table-cell whitespace-nowrap">
+                            {row.time}
+                          </TableCell>
+                          <TableCell className="font-medium">{row.event}</TableCell>
+                          <TableCell>
+                            {row.refLabel ? (
+                              <span className="font-mono text-blue-600 hover:text-blue-700 hover:underline">
+                                {row.refLabel}
+                              </span>
+                            ) : (
+                              <span className="text-gray-400">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <div className="truncate max-w-md" title={row.summary}>
+                              {row.summary}
+                            </div>
+                          </TableCell>
+                          <TableCell className="hidden lg:table-cell">
+                            {row.meterReading ? (
+                              <span className="text-gray-700 font-mono text-sm">{row.meterReading}</span>
+                            ) : (
+                              <span className="text-gray-400">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="hidden md:table-cell">{row.userName}</TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </tbody>
+                </Table>
               </div>
             ) : (
-              <div className="text-center py-8 text-gray-500">No activity log entries</div>
+              <div className="text-center py-8 text-gray-500">
+                {activityLog.length === 0
+                  ? 'No activity log entries'
+                  : 'No entries match your filters'}
+              </div>
             )}
           </div>
         </Card>
@@ -981,7 +1234,7 @@ export function AssetDetailPage() {
         onEditAsset={() => setIsEditAssetModalOpen(true)}
         onChangeStatus={() => setIsChangeStatusModalOpen(true)}
         onUploadDocs={() => setIsUploadDocModalOpen(true)}
-        onUpdateHours={() => showToast('Update hours functionality coming soon', 'info')}
+        onUpdateHours={() => setIsUpdateHoursModalOpen(true)}
       />
 
       {/* Tabs Content */}
@@ -1063,6 +1316,18 @@ export function AssetDetailPage() {
           onDone={handleComplianceDone}
         />
       )}
+
+      <UpdateHoursModal
+        isOpen={isUpdateHoursModalOpen}
+        onClose={() => setIsUpdateHoursModalOpen(false)}
+        asset={asset}
+        onHoursUpdated={() => {
+          // Refresh asset data and activity log
+          setRefreshKey((prev) => prev + 1);
+          // Note: In a real implementation, this would update the asset's hours/mileage
+          // and add an activity log entry
+        }}
+      />
     </div>
   );
 }

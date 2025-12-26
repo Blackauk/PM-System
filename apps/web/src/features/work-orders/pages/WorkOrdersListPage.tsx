@@ -630,7 +630,7 @@ export function WorkOrdersListPage() {
                     onClick={() => setIsEditMode(true)}
                     size="sm"
                   >
-                    Inline Edit
+                    Edit Table
                   </Button>
                   <Button onClick={() => setIsCreateWOModalOpen(true)} size="sm">
                     + New Work Order

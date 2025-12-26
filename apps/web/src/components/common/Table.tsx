@@ -24,14 +24,18 @@ export function TableHeader({ children }: TableHeaderProps) {
 interface TableRowProps {
   children: ReactNode;
   className?: string;
-  onClick?: () => void;
+  onClick?: (e: React.MouseEvent) => void;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
 }
 
-export function TableRow({ children, className = '', onClick }: TableRowProps) {
+export function TableRow({ children, className = '', onClick, onMouseEnter, onMouseLeave }: TableRowProps) {
   return (
     <tr
       className={`border-b border-gray-200 ${onClick ? 'cursor-pointer hover:bg-gray-50' : ''} ${className}`}
       onClick={onClick}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
     >
       {children}
     </tr>
@@ -45,7 +49,7 @@ interface TableHeaderCellProps {
 
 export function TableHeaderCell({ children, className = '' }: TableHeaderCellProps) {
   return (
-    <th className={`px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider ${className}`}>
+    <th className={`px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider ${className}`}>
       {children}
     </th>
   );
@@ -54,8 +58,9 @@ export function TableHeaderCell({ children, className = '' }: TableHeaderCellPro
 interface TableCellProps {
   children: ReactNode;
   className?: string;
+  colSpan?: number;
 }
 
-export function TableCell({ children, className = '' }: TableCellProps) {
-  return <td className={`px-4 py-3 text-sm text-gray-900 ${className}`}>{children}</td>;
+export function TableCell({ children, className = '', colSpan }: TableCellProps) {
+  return <td className={`px-6 py-4 text-sm text-gray-900 ${className}`} colSpan={colSpan}>{children}</td>;
 }

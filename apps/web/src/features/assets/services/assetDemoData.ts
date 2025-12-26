@@ -499,6 +499,11 @@ export interface ActivityLogEntry {
   action: string;
   user: string;
   details?: string;
+  // Meter reading fields
+  meterReadingAtEvent?: number; // Snapshot of meter reading at the time of the event
+  meterReadingUnit?: 'hours' | 'miles' | 'km'; // Unit for the meter reading
+  previousReading?: number; // Previous reading (for Meter Reading Updated entries)
+  newReading?: number; // New reading (for Meter Reading Updated entries)
 }
 
 export const getActivityLogForAsset = (assetId: string): ActivityLogEntry[] => {
@@ -511,6 +516,8 @@ export const getActivityLogForAsset = (assetId: string): ActivityLogEntry[] => {
       action: 'Inspection Completed',
       user: 'John Smith',
       details: 'Daily Pre-Start Inspection (INS-2025-001) - Pass',
+      meterReadingAtEvent: 2520,
+      meterReadingUnit: 'hours',
     },
     {
       id: 'activity-002',
@@ -518,6 +525,8 @@ export const getActivityLogForAsset = (assetId: string): ActivityLogEntry[] => {
       action: 'Inspection Completed',
       user: 'John Smith',
       details: 'Pre-Use Safety Check (INS-2025-005) - Fail - Defect created',
+      meterReadingAtEvent: 2480,
+      meterReadingUnit: 'hours',
     },
     {
       id: 'activity-003',
@@ -525,6 +534,18 @@ export const getActivityLogForAsset = (assetId: string): ActivityLogEntry[] => {
       action: 'Work Order Created',
       user: 'Supervisor',
       details: 'WO-000123 - Fix hydraulic leak on main boom',
+      meterReadingAtEvent: 2450,
+      meterReadingUnit: 'hours',
+    },
+    {
+      id: 'activity-meter-001',
+      timestamp: '2025-12-19T14:00:00Z',
+      action: 'Meter Reading Updated',
+      user: 'John Smith',
+      previousReading: 2400,
+      newReading: 2450,
+      meterReadingUnit: 'hours',
+      details: 'Meter Reading: 2400 hours → 2450 hours',
     },
     {
       id: 'activity-004',
@@ -532,6 +553,8 @@ export const getActivityLogForAsset = (assetId: string): ActivityLogEntry[] => {
       action: 'Inspection Completed',
       user: 'Mike Davis',
       details: 'Weekly Safety Inspection (INS-2025-002) - Pass',
+      meterReadingAtEvent: 2380,
+      meterReadingUnit: 'hours',
     },
     {
       id: 'activity-005',
@@ -539,6 +562,18 @@ export const getActivityLogForAsset = (assetId: string): ActivityLogEntry[] => {
       action: 'Defect Reported',
       user: 'Supervisor',
       details: 'DEF-002 - Worn track pads - left side',
+      meterReadingAtEvent: 2320,
+      meterReadingUnit: 'hours',
+    },
+    {
+      id: 'activity-meter-002',
+      timestamp: '2025-12-12T16:00:00Z',
+      action: 'Meter Reading Updated',
+      user: 'Mike Davis',
+      previousReading: 2300,
+      newReading: 2320,
+      meterReadingUnit: 'hours',
+      details: 'Meter Reading: 2300 hours → 2320 hours',
     },
   ];
 };

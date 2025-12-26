@@ -13,6 +13,7 @@ import { WorkOrderTrendsChart } from '../components/WorkOrderTrendsChart';
 import { DashboardDateFilter } from '../components/DashboardDateFilter';
 import { WorkOrderAlertsCard } from '../components/WorkOrderAlertsCard';
 import { InspectionAlertsCard } from '../components/InspectionAlertsCard';
+import { DefectAlertsCard } from '../components/DefectAlertsCard';
 import type { DateRange } from '../utils/dateRange';
 import { Building2, Clock, ClipboardList, Shield, XCircle, AlertTriangle } from 'lucide-react';
 import {
@@ -91,6 +92,9 @@ export function DashboardPage() {
           </div>
         </div>
       </Card>
+
+      {/* Defect Alerts */}
+      <DefectAlertsCard />
 
       {/* KPI Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
