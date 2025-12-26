@@ -232,7 +232,7 @@ export function GeneratePMTaskModal({ isOpen, onClose, schedule, onTaskCreated }
               type: 'photo' as const,
             }] : undefined,
             createdBy: user?.id || '',
-            createdByName: user?.name || 'Unknown',
+            createdByName: user ? (user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.email || 'Unknown') : 'Unknown',
           });
           
           setCreatedDefectIds((prev) => ({ ...prev, [answer.checklistItemId]: defect.id }));
@@ -269,7 +269,7 @@ export function GeneratePMTaskModal({ isOpen, onClose, schedule, onTaskCreated }
             assignedToId: payload.assignedToId,
             dueDate: payload.targetDate || schedule.nextDueDate,
             createdById: user?.id || '',
-            createdByName: user?.name || 'Unknown',
+            createdByName: user ? (user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.email || 'Unknown') : 'Unknown',
             isDraft: true,
             pmScheduleId: schedule.id,
             pmTaskId: taskId,
@@ -339,7 +339,7 @@ export function GeneratePMTaskModal({ isOpen, onClose, schedule, onTaskCreated }
       notes,
       createdAt: new Date().toISOString(),
       createdBy: user?.id || '',
-      createdByName: user?.name || 'Unknown',
+      createdByName: user ? (user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.email || 'Unknown') : 'Unknown',
     };
     
     // Create drafts from issues
@@ -369,7 +369,7 @@ export function GeneratePMTaskModal({ isOpen, onClose, schedule, onTaskCreated }
       scheduleId: schedule.id,
       timestamp: new Date().toISOString(),
       userId: user?.id || '',
-      userName: user?.name || 'Unknown',
+      userName: user ? (user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.email || 'Unknown') : 'Unknown',
       action: 'pm_task_generated',
       details: `Generated PM Task ${task.taskCode} (Draft)${defectCount > 0 || workOrderCount > 0 ? ` - ${defectCount} defect(s), ${workOrderCount} WO(s) created` : ''}`,
     });
@@ -414,7 +414,7 @@ export function GeneratePMTaskModal({ isOpen, onClose, schedule, onTaskCreated }
       startDate: startDate || undefined,
       completedAt: new Date().toISOString(),
       completedBy: user?.id || '',
-      completedByName: user?.name || 'Unknown',
+      completedByName: user ? (user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.email || 'Unknown') : 'Unknown',
       checklistItems: schedule.checklistItems || [],
       checklistAnswers: [],
       attachments: attachments.map((file) => ({
@@ -428,7 +428,7 @@ export function GeneratePMTaskModal({ isOpen, onClose, schedule, onTaskCreated }
       notes,
       createdAt: new Date().toISOString(),
       createdBy: user?.id || '',
-      createdByName: user?.name || 'Unknown',
+      createdByName: user ? (user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.email || 'Unknown') : 'Unknown',
     };
     
     // Create drafts from issues
@@ -465,7 +465,7 @@ export function GeneratePMTaskModal({ isOpen, onClose, schedule, onTaskCreated }
       scheduleId: schedule.id,
       completedDate: new Date().toISOString(),
       completedBy: user?.id || '',
-      completedByName: user?.name || 'Unknown',
+      completedByName: user ? (user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.email || 'Unknown') : 'Unknown',
       notes: notes || 'PM Task completed',
       result: 'Completed' as const,
       workOrderId: undefined,
@@ -479,7 +479,7 @@ export function GeneratePMTaskModal({ isOpen, onClose, schedule, onTaskCreated }
       scheduleId: schedule.id,
       timestamp: new Date().toISOString(),
       userId: user?.id || '',
-      userName: user?.name || 'Unknown',
+      userName: user ? (user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.email || 'Unknown') : 'Unknown',
       action: 'pm_task_generated' as const,
       details: `Generated PM Task ${task.taskCode}`,
     });
@@ -488,7 +488,7 @@ export function GeneratePMTaskModal({ isOpen, onClose, schedule, onTaskCreated }
       scheduleId: schedule.id,
       timestamp: new Date().toISOString(),
       userId: user?.id || '',
-      userName: user?.name || 'Unknown',
+      userName: user ? (user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.email || 'Unknown') : 'Unknown',
       action: 'marked_completed' as const,
       details: `PM Task ${task.taskCode} completed`,
     });

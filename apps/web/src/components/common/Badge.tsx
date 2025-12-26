@@ -1,11 +1,12 @@
-interface BadgeProps {
-  children: string | number;
+import { ReactNode } from 'react';
+
+interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
+  children: ReactNode;
   variant?: 'default' | 'success' | 'warning' | 'error' | 'info';
   size?: 'sm' | 'md';
-  onClick?: () => void;
 }
 
-export function Badge({ children, variant = 'default', size = 'md', onClick }: BadgeProps) {
+export function Badge({ children, variant = 'default', size = 'md', className = '', ...props }: BadgeProps) {
   const variantClasses = {
     default: 'bg-gray-100 text-gray-800',
     success: 'bg-green-100 text-green-800',
@@ -19,12 +20,12 @@ export function Badge({ children, variant = 'default', size = 'md', onClick }: B
     md: 'px-2.5 py-1 text-sm',
   };
 
-  const interactiveClasses = onClick ? 'cursor-pointer hover:opacity-80 transition-opacity' : '';
+  const interactiveClasses = props.onClick ? 'cursor-pointer hover:opacity-80 transition-opacity' : '';
 
   return (
     <span
-      className={`inline-flex items-center rounded-full font-medium ${variantClasses[variant]} ${sizeClasses[size]} ${interactiveClasses}`}
-      onClick={onClick}
+      className={`inline-flex items-center rounded-full font-medium ${variantClasses[variant]} ${sizeClasses[size]} ${interactiveClasses} ${className}`}
+      {...props}
     >
       {children}
     </span>

@@ -1,4 +1,4 @@
-import type { Asset, AssetType, ComplianceItem, AssetFilter, ComplianceType } from './types';
+import type { Asset, AssetType, ComplianceItem, AssetFilter, ComplianceType, OperationalStatus, Ownership, Criticality, ComplianceRAG } from './types';
 
 // Mock asset types
 const assetTypes: AssetType[] = [

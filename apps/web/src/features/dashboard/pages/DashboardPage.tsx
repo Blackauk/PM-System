@@ -93,9 +93,6 @@ export function DashboardPage() {
         </div>
       </Card>
 
-      {/* Defect Alerts */}
-      <DefectAlertsCard />
-
       {/* KPI Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         {kpiStats.map((stat) => {
@@ -256,6 +253,36 @@ export function DashboardPage() {
           >
             <WorkOrdersStatusDonut data={workOrdersByStatus} />
           </CollapsibleCard>
+
+          {/* Defects by Category - Moved from right column for balance */}
+          <CollapsibleCard
+            title="Defects by Category"
+            storageKey="dashboard-defects-category"
+            defaultExpanded={true}
+            actions={
+              <DashboardDateFilter
+                value={defectsCategoryRange}
+                onChange={setDefectsCategoryRange}
+              />
+            }
+          >
+            <div className="space-y-3">
+              {categoryBreakdown.map((cat) => (
+                <div key={cat.category}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm font-medium text-gray-700">{cat.category}</span>
+                    <span className="text-sm text-gray-600">{cat.count} ({cat.percentage}%)</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div
+                      className="bg-blue-600 h-2 rounded-full"
+                      style={{ width: `${cat.percentage}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CollapsibleCard>
         </div>
 
         {/* Right Column - Info Rail */}
@@ -265,6 +292,9 @@ export function DashboardPage() {
 
           {/* Inspection Alerts */}
           <InspectionAlertsCard />
+
+          {/* Defect Alerts */}
+          <DefectAlertsCard />
 
           {/* Site Summary */}
           <CollapsibleCard title="Site Summary" storageKey="dashboard-site-summary" defaultExpanded={true}>
@@ -351,35 +381,6 @@ export function DashboardPage() {
             )}
           </CollapsibleCard>
 
-          {/* Defects by Category */}
-          <CollapsibleCard
-            title="Defects by Category"
-            storageKey="dashboard-defects-category"
-            defaultExpanded={true}
-            actions={
-              <DashboardDateFilter
-                value={defectsCategoryRange}
-                onChange={setDefectsCategoryRange}
-              />
-            }
-          >
-            <div className="space-y-3">
-              {categoryBreakdown.map((cat) => (
-                <div key={cat.category}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm font-medium text-gray-700">{cat.category}</span>
-                    <span className="text-sm text-gray-600">{cat.count} ({cat.percentage}%)</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div
-                      className="bg-blue-600 h-2 rounded-full"
-                      style={{ width: `${cat.percentage}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CollapsibleCard>
         </div>
       </div>
     </div>

@@ -86,7 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const token = localStorage.getItem('accessToken');
       if (token) {
-        const userData = await api.get('/me');
+        const userData = await api.get('/me') as User;
         setUser(userData);
       }
     } catch (error) {
@@ -116,7 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     // Production mode: normal login flow
-    const response = await api.post('/auth/login', { email, password });
+    const response = await api.post('/auth/login', { email, password }) as { accessToken: string; user: User };
     localStorage.setItem('accessToken', response.accessToken);
     // Load displayName from localStorage if available
     const savedProfile = localStorage.getItem('ppma.profile');
@@ -147,7 +147,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function refreshUser() {
     try {
-      const userData = await api.get('/me');
+      const userData = await api.get('/me') as User;
       // Load displayName from localStorage if available
       const savedProfile = localStorage.getItem('ppma.profile');
       let displayName: string | undefined;

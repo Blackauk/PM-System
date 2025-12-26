@@ -976,7 +976,7 @@ export function AssetDetailPage() {
                         } else if (row.kind === 'work-order') {
                           // Try to find work order by ID (codes like WO-000123 might match id)
                           const workOrder = workOrders.find(
-                            (wo) => wo.id === row.refId || wo.id?.includes(row.refId)
+                            (wo) => wo.id === row.refId || (row.refId && wo.id?.includes(row.refId))
                           );
                           if (workOrder) {
                             navigate(`/work-orders/${workOrder.id}`);

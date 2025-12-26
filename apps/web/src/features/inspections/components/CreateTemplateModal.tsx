@@ -135,7 +135,7 @@ export function CreateTemplateModal({ isOpen, onClose }: CreateTemplateModalProp
             version: 'v1',
             createdAt: new Date().toISOString(),
             createdBy: user.id,
-            createdByName: user.name || 'Unknown',
+            createdByName: user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.email || 'Unknown',
           },
         ],
         sections: sections.length > 0 ? sections : [],
@@ -149,7 +149,7 @@ export function CreateTemplateModal({ isOpen, onClose }: CreateTemplateModalProp
         createdByName: user.name || 'Unknown',
         updatedAt: new Date().toISOString(),
         updatedBy: user.id,
-        updatedByName: user.name || 'Unknown',
+        updatedByName: user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.email || 'Unknown',
       });
       
       showToast('Template created successfully', 'success');

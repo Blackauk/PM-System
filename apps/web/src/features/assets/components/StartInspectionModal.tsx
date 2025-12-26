@@ -58,7 +58,7 @@ export function StartInspectionModal({
               { value: '', label: '-- Select Template --' },
               ...templates.map((t) => ({
                 value: t.id,
-                label: `${t.name} (${t.inspectionType})`,
+                label: t.name,
               })),
             ]}
           />

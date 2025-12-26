@@ -107,7 +107,7 @@ export function PMScheduleDetailPage() {
       scheduleId: pmSchedule.id,
       completedDate: new Date().toISOString(),
       completedBy: user?.id || '',
-      completedByName: user?.name || 'Unknown',
+      completedByName: user ? (user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.email || 'Unknown') : 'Unknown',
       notes: 'Marked as completed',
       result: 'Completed' as const,
     });
@@ -120,7 +120,7 @@ export function PMScheduleDetailPage() {
       scheduleId: pmSchedule.id,
       timestamp: new Date().toISOString(),
       userId: user?.id || '',
-      userName: user?.name || 'Unknown',
+      userName: user ? (user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.email || 'Unknown') : 'Unknown',
       action: 'marked_completed',
       details: 'PM Schedule marked as completed',
     });
@@ -178,7 +178,7 @@ export function PMScheduleDetailPage() {
       scheduleId: pmSchedule.id,
       timestamp: new Date().toISOString(),
       userId: user?.id || '',
-      userName: user?.name || 'Unknown',
+      userName: user ? (user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.email || 'Unknown') : 'Unknown',
       action: 'rescheduled',
       details: `Next due date changed to ${updated.nextDueDate}`,
     });
@@ -260,7 +260,7 @@ export function PMScheduleDetailPage() {
       scheduleId: pmSchedule.id,
       timestamp: new Date().toISOString(),
       userId: user?.id || '',
-      userName: user?.name || 'Unknown',
+      userName: user ? (user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.email || 'Unknown') : 'Unknown',
       action: 'checklist_edited',
       details: `Updated ${checklistItems.length} checklist items`,
     });

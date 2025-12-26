@@ -54,7 +54,7 @@ export function UploadDocumentModal({
       filename: selectedFile.name,
       type: selectedFile.type.startsWith('image/') ? 'photo' : 'document',
       uploadedAt: new Date().toISOString(),
-      uploadedBy: user?.name || 'Current User',
+      uploadedBy: user ? `${user.firstName} ${user.lastName}`.trim() || user.email || 'Current User' : 'Current User',
     };
 
     onUpload(document);

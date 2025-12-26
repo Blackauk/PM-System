@@ -1,5 +1,6 @@
 import { getAssetTypes, mockSites, mockResponsibleTeams } from '../services';
 import type { OperationalStatus, LifecycleStatus, ComplianceRAG, Ownership, Criticality } from '../types';
+import { validateStatusCombination } from './statusValidation';
 
 export interface ParsedAssetRow {
   assetId?: string;

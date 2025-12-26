@@ -298,7 +298,7 @@ export function AssetsPage() {
       key: 'openChecksCount',
       label: 'Open Checks',
       sortable: true,
-      align: 'center',
+      align: 'center' as const,
       render: (_: any, row: Asset) => {
         const count = Number(row.openChecksCount ?? 0);
         return (
@@ -323,7 +323,7 @@ export function AssetsPage() {
       key: 'openIssuesCount',
       label: 'Open Issues',
       sortable: true,
-      align: 'center',
+      align: 'center' as const,
       render: (_: any, row: Asset) => {
         const count = Number(row.openIssuesCount ?? 0);
         return (

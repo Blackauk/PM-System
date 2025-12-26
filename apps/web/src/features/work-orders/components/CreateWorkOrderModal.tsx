@@ -154,7 +154,7 @@ export function CreateWorkOrderModal({ isOpen, onClose, onSuccess, prefillAssetI
         steps: formData.steps || undefined,
         attachments: workOrderAttachments.length > 0 ? workOrderAttachments : undefined,
         createdById: user?.id || 'unknown',
-        createdByName: user?.name || 'Unknown User',
+        createdByName: user ? (user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.email || 'Unknown User') : 'Unknown User',
       });
 
       showToast('Work order created successfully', 'success');

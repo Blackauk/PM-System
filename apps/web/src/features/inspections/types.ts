@@ -54,7 +54,7 @@ export interface ChecklistItem {
   question: string;
   type: ChecklistItemType;
   required: boolean;
-  safetyCritical: boolean; // If true, failure fails entire inspection (safety-critical risk)
+  safetyCritical?: boolean; // If true, failure fails entire inspection (safety-critical risk)
   // Backward compatibility: support both critical and safetyCritical
   critical?: boolean; // Deprecated: use safetyCritical instead
   order: number;

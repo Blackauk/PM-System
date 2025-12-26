@@ -1,12 +1,9 @@
 import { ReactNode } from 'react';
 
-interface ButtonProps {
+interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   children: ReactNode;
   variant?: 'primary' | 'secondary' | 'outline' | 'ghost';
   size?: 'sm' | 'md' | 'lg';
-  onClick?: () => void;
-  className?: string;
-  disabled?: boolean;
 }
 
 export function Button({
@@ -16,6 +13,7 @@ export function Button({
   onClick,
   className = '',
   disabled = false,
+  ...props
 }: ButtonProps) {
   const baseClasses = 'font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2';
   
@@ -39,6 +37,7 @@ export function Button({
       className={`${baseClasses} ${variantClasses[variant]} ${sizeClasses[size]} ${disabledClasses} flex items-center justify-center ${className}`}
       onClick={onClick}
       disabled={disabled}
+      {...props}
     >
       {children}
     </button>

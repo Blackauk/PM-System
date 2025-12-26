@@ -12,6 +12,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': resolve(__dirname, './src'),
+      '@ppm/shared': resolve(__dirname, '../../packages/shared/src'),
     },
   },
   plugins: [

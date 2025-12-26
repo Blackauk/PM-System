@@ -42,25 +42,22 @@ export function TableRow({ children, className = '', onClick, onMouseEnter, onMo
   );
 }
 
-interface TableHeaderCellProps {
+interface TableHeaderCellProps extends React.ThHTMLAttributes<HTMLTableCellElement> {
   children: ReactNode;
-  className?: string;
 }
 
-export function TableHeaderCell({ children, className = '' }: TableHeaderCellProps) {
+export function TableHeaderCell({ children, className = '', ...props }: TableHeaderCellProps) {
   return (
-    <th className={`px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider ${className}`}>
+    <th className={`px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider ${className}`} {...props}>
       {children}
     </th>
   );
 }
 
-interface TableCellProps {
+interface TableCellProps extends React.TdHTMLAttributes<HTMLTableCellElement> {
   children: ReactNode;
-  className?: string;
-  colSpan?: number;
 }
 
-export function TableCell({ children, className = '', colSpan }: TableCellProps) {
-  return <td className={`px-6 py-4 text-sm text-gray-900 ${className}`} colSpan={colSpan}>{children}</td>;
+export function TableCell({ children, className = '', ...props }: TableCellProps) {
+  return <td className={`px-6 py-4 text-sm text-gray-900 ${className}`} {...props}>{children}</td>;
 }

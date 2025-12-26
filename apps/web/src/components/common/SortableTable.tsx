@@ -5,7 +5,7 @@ import { Checkbox } from './Checkbox';
 
 export type SortDirection = 'asc' | 'desc' | null;
 
-interface SortableColumn {
+export interface SortableColumn {
   key: string;
   label: string | ReactNode;
   sortable?: boolean;
