@@ -1,6 +1,7 @@
 import { useState, ReactNode } from 'react';
 import { Search } from 'lucide-react';
 import { Checkbox } from './Checkbox';
+import { CheckboxOptionRow } from './CheckboxOptionRow';
 
 interface Option {
   value: string;
@@ -59,36 +60,32 @@ export function MultiSelectFilter({
         </div>
       )}
 
-      <div className="max-h-48 overflow-y-auto space-y-1">
+      <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
         {filteredOptions.length > 1 && (
-          <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-50 rounded cursor-pointer text-sm">
-            <Checkbox
+          <div className="mb-2 pb-2 border-b border-gray-200">
+            <CheckboxOptionRow
               checked={selected.length === filteredOptions.length && filteredOptions.length > 0}
               onChange={handleSelectAll}
+              label="Select All"
+              className="font-medium"
             />
-            <span className="font-medium text-gray-700">Select All</span>
-          </label>
+          </div>
         )}
 
         {filteredOptions.map((option) => {
           const isSelected = selected.includes(option.value);
           return (
-            <label
+            <CheckboxOptionRow
               key={option.value}
-              className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer text-sm ${
+              checked={isSelected}
+              onChange={() => handleToggle(option.value)}
+              label={option.label}
+              className={
                 isSelected
-                  ? 'bg-white border border-blue-500 hover:bg-blue-50'
-                  : 'hover:bg-gray-50 border border-transparent'
-              }`}
-            >
-              <Checkbox
-                checked={isSelected}
-                onChange={() => handleToggle(option.value)}
-              />
-              <span className={isSelected ? 'font-medium text-gray-900' : 'text-gray-700'}>
-                {option.label}
-              </span>
-            </label>
+                  ? 'bg-blue-50 border border-blue-200 hover:bg-blue-100 font-medium'
+                  : 'border border-transparent'
+              }
+            />
           );
         })}
 

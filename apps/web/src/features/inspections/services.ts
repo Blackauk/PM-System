@@ -144,7 +144,7 @@ const mockChecklists: Checklist[] = [
       {
         id: 'item-009',
         question: 'Test battery voltage',
-        type: 'Number',
+        type: 'Numeric',
         required: true,
         critical: false,
         order: 2,
@@ -237,7 +237,7 @@ const mockChecklists: Checklist[] = [
       {
         id: 'item-014',
         question: 'Check pump pressure',
-        type: 'Number',
+        type: 'Numeric',
         required: true,
         critical: false,
         order: 1,
@@ -564,7 +564,7 @@ const mockCheckSheetTemplates: CheckSheetTemplate[] = [
         id: 'item-mewp-015',
         sectionId: 'section-mewp-004',
         question: 'Battery / fuel level',
-        type: 'Number',
+        type: 'Numeric',
         required: true,
         safetyCritical: false,
         critical: false,
@@ -787,7 +787,7 @@ const mockCheckSheetTemplates: CheckSheetTemplate[] = [
         id: 'item-comp-009',
         sectionId: 'section-comp-003',
         question: 'Operating pressure',
-        type: 'Number',
+        type: 'Numeric',
         required: true,
         safetyCritical: false,
         critical: false,
@@ -1005,7 +1005,7 @@ const mockCheckSheetTemplates: CheckSheetTemplate[] = [
         id: 'item-gen-005',
         sectionId: 'section-gen-002',
         question: 'Fuel level',
-        type: 'Number',
+        type: 'Numeric',
         required: true,
         safetyCritical: false,
         critical: false,
@@ -1052,7 +1052,7 @@ const mockCheckSheetTemplates: CheckSheetTemplate[] = [
         id: 'item-gen-009',
         sectionId: 'section-gen-004',
         question: 'Voltage output within limits',
-        type: 'Number',
+        type: 'Numeric',
         required: true,
         safetyCritical: false,
         critical: false,
@@ -1276,7 +1276,7 @@ const mockCheckSheetTemplates: CheckSheetTemplate[] = [
         id: 'item-ex-015',
         sectionId: 'section-ex-005',
         question: 'Engine hours',
-        type: 'Number',
+        type: 'Numeric',
         required: true,
         safetyCritical: false,
         critical: false,
@@ -1507,7 +1507,7 @@ const mockCheckSheetTemplates: CheckSheetTemplate[] = [
         id: 'item-015',
         sectionId: 'section-014',
         question: 'Check pump pressure',
-        type: 'Number',
+        type: 'Numeric',
         required: true,
         critical: false,
         order: 1,
@@ -1745,8 +1745,8 @@ function createAnswersForInspection(
         // Complete this item (randomly Pass or NA for variety)
         itemResult = Math.random() > 0.1 ? 'Pass' : 'NA';
         
-        // For Number type items, add a value
-        if (item.type === 'Number') {
+        // For Numeric type items, add a value
+        if (item.type === 'Numeric') {
           const min = item.minValue || 0;
           const max = item.maxValue || 100;
           const value = min + Math.random() * (max - min);

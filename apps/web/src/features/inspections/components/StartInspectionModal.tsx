@@ -4,6 +4,7 @@ import { Button } from '../../../components/common/Button';
 import { Input } from '../../../components/common/Input';
 import { Select } from '../../../components/common/Select';
 import { FileUpload, type UploadedFile } from '../../../components/common/FileUpload';
+import { SearchableMultiSelectAssetPicker } from '../../../components/common/SearchableMultiSelectAssetPicker';
 import { getAssets } from '../../assets/services';
 import { mockSites } from '../mockData';
 import { useAuth } from '../../../contexts/AuthContext';
@@ -26,7 +27,7 @@ export function StartInspectionModal({ isOpen, onClose, prefillAssetId }: StartI
   const assets = getAssets({});
   
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
-  const [selectedAssetId, setSelectedAssetId] = useState(prefillAssetId || '');
+  const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>(prefillAssetId ? [prefillAssetId] : []);
   const [selectedSiteId, setSelectedSiteId] = useState('');
   const [inspectionDate, setInspectionDate] = useState(new Date().toISOString().split('T')[0]);
   const [checklistAnswers, setChecklistAnswers] = useState<Record<string, ChecklistItemAnswer>>({});
@@ -46,20 +47,20 @@ export function StartInspectionModal({ isOpen, onClose, prefillAssetId }: StartI
     if (prefillAssetId && isOpen) {
       const asset = assets.find((a) => a.id === prefillAssetId);
       if (asset) {
-        setSelectedAssetId(asset.id);
+        setSelectedAssetIds([asset.id]);
         setSelectedSiteId(asset.siteId);
       }
     }
   }, [prefillAssetId, isOpen, assets]);
 
   useEffect(() => {
-    if (selectedAssetId) {
-      const asset = assets.find((a) => a.id === selectedAssetId);
+    if (selectedAssetIds.length > 0) {
+      const asset = assets.find((a) => a.id === selectedAssetIds[0]);
       if (asset) {
         setSelectedSiteId(asset.siteId);
       }
     }
-  }, [selectedAssetId, assets]);
+  }, [selectedAssetIds, assets]);
 
   const selectedTemplate = templates.find((t) => t.id === selectedTemplateId);
 
@@ -82,7 +83,7 @@ export function StartInspectionModal({ isOpen, onClose, prefillAssetId }: StartI
     if (!selectedTemplateId) {
       newErrors.templateId = 'Template is required';
     }
-    if (!selectedAssetId) {
+    if (selectedAssetIds.length === 0) {
       newErrors.assetId = 'Asset is required';
     }
     if (!selectedSiteId) {
@@ -120,6 +121,10 @@ export function StartInspectionModal({ isOpen, onClose, prefillAssetId }: StartI
       );
       const result = hasFail ? 'Fail' : 'Pass';
       
+      // Use first selected asset (for now, single asset per inspection)
+      const selectedAssetId = selectedAssetIds[0];
+      const selectedAsset = assets.find((a) => a.id === selectedAssetId);
+      
       // Create inspection
       const inspection = await createNewInspection({
         templateId: selectedTemplate.id,
@@ -129,9 +134,9 @@ export function StartInspectionModal({ isOpen, onClose, prefillAssetId }: StartI
         result: result as 'Pass' | 'Fail' | 'Pending',
         status: 'InProgress',
         assetId: selectedAssetId,
-        assetTypeCode: assets.find((a) => a.id === selectedAssetId)?.typeCode,
-        assetMake: assets.find((a) => a.id === selectedAssetId)?.make,
-        assetModel: assets.find((a) => a.id === selectedAssetId)?.model,
+        assetTypeCode: selectedAsset?.typeCode,
+        assetMake: selectedAsset?.make,
+        assetModel: selectedAsset?.model,
         siteId: selectedSiteId,
         siteName: mockSites.find((s) => s.id === selectedSiteId)?.name,
         inspectorId: user.id,
@@ -226,21 +231,25 @@ export function StartInspectionModal({ isOpen, onClose, prefillAssetId }: StartI
           </div>
           
           <div>
-            <Select
-              label="Asset *"
-              value={selectedAssetId}
-              onChange={(e) => {
-                setSelectedAssetId(e.target.value);
+            <SearchableMultiSelectAssetPicker
+              assets={assets.map((a) => ({
+                id: a.id,
+                label: `${a.typeCode || ''} ${a.id} - ${a.make || ''} ${a.model || ''}`,
+                typeCode: a.typeCode,
+                make: a.make,
+                model: a.model,
+                siteName: a.siteName,
+              }))}
+              selected={selectedAssetIds}
+              onChange={(selected) => {
+                setSelectedAssetIds(selected);
                 setHasUnsavedChanges(true);
               }}
-              options={[
-                { value: '', label: 'Select asset...' },
-                ...assets.map((a) => ({
-                  value: a.id,
-                  label: `${a.typeCode} ${a.id} - ${a.make} ${a.model}`,
-                })),
-              ]}
+              placeholder="Search and select asset..."
+              label="Asset"
               error={errors.assetId}
+              required
+              allowMultiple={false} // Single select for starting inspection
             />
           </div>
           

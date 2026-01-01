@@ -6,7 +6,8 @@ import { Badge } from '../../../components/common/Badge';
 import { Button } from '../../../components/common/Button';
 import { Checkbox } from '../../../components/common/Checkbox';
 import { Select } from '../../../components/common/Select';
-import { FloatingFilterPanel, FilterSection } from '../../../components/common/FloatingFilterPanel';
+import { FilterPanel } from '../../../components/common/FilterPanel';
+import { FilterSection } from '../../../components/common/FilterSection';
 import { MultiSelectFilter } from '../../../components/common/MultiSelectFilter';
 import { ListPageTable } from '../../../components/common/ListPageTable';
 import { DropdownMenu } from '../../../components/common/DropdownMenu';
@@ -26,13 +27,14 @@ export function AssetsPage() {
   const addAssetButtonRef = useRef<HTMLDivElement>(null);
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState<AssetFilter>({ includeArchived: false });
-  const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isAddAssetDropdownOpen, setIsAddAssetDropdownOpen] = useState(false);
   const [isSingleFormOpen, setIsSingleFormOpen] = useState(false);
   const [isBulkAddOpen, setIsBulkAddOpen] = useState(false);
   const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
   const [bulkOperationalStatus, setBulkOperationalStatus] = useState<OperationalStatus | ''>('');
   const [bulkLifecycleStatus, setBulkLifecycleStatus] = useState<LifecycleStatus | ''>('');
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const [tempFilters, setTempFilters] = useState<AssetFilter>({ includeArchived: false });
 
   const assetTypes = getAssetTypes();
   const [openIssuesOnly, setOpenIssuesOnly] = useState(false);
@@ -428,19 +430,34 @@ export function AssetsPage() {
       </div>
 
 
-      {/* Floating Filter Panel */}
-      <FloatingFilterPanel
-        isOpen={isFilterOpen}
-        onClose={() => setIsFilterOpen(false)}
-        anchorRef={filterButtonRef}
+      {/* Filter Panel */}
+      <FilterPanel
+        isOpen={showFilterPanel}
+        onClose={() => {
+          setShowFilterPanel(false);
+          setTempFilters(filters); // Reset temp filters on close
+        }}
+        onApply={() => {
+          setFilters(tempFilters);
+          setShowFilterPanel(false);
+        }}
+        onReset={() => {
+          const emptyFilters: AssetFilter = { includeArchived: false };
+          setTempFilters(emptyFilters);
+          setFilters(emptyFilters);
+        }}
+        title="Asset Filters"
       >
         <div className="space-y-4">
           {/* Site Filter */}
           <FilterSection title="Site">
             <MultiSelectFilter
               options={siteOptions}
-              selected={getSelectedArray(filters.siteId)}
-              onChange={(selected) => handleMultiSelectChange('siteId', selected)}
+              selected={getSelectedArray(tempFilters.siteId)}
+              onChange={(selected) => {
+                const value = selected.length === 1 ? selected[0] : selected.length > 0 ? selected : undefined;
+                setTempFilters(prev => ({ ...prev, siteId: value }));
+              }}
               searchable={true}
               placeholder="Search sites..."
             />
@@ -450,8 +467,11 @@ export function AssetsPage() {
           <FilterSection title="Asset Type">
             <MultiSelectFilter
               options={assetTypeOptions}
-              selected={getSelectedArray(filters.assetTypeId)}
-              onChange={(selected) => handleMultiSelectChange('assetTypeId', selected)}
+              selected={getSelectedArray(tempFilters.assetTypeId)}
+              onChange={(selected) => {
+                const value = selected.length === 1 ? selected[0] : selected.length > 0 ? selected : undefined;
+                setTempFilters(prev => ({ ...prev, assetTypeId: value }));
+              }}
               searchable={true}
               placeholder="Search asset types..."
             />
@@ -461,8 +481,11 @@ export function AssetsPage() {
           <FilterSection title="Operational Status">
             <MultiSelectFilter
               options={operationalStatusOptions}
-              selected={getSelectedArray(filters.operationalStatus)}
-              onChange={(selected) => handleMultiSelectChange('operationalStatus', selected)}
+              selected={getSelectedArray(tempFilters.operationalStatus)}
+              onChange={(selected) => {
+                const value = selected.length === 1 ? selected[0] : selected.length > 0 ? selected : undefined;
+                setTempFilters(prev => ({ ...prev, operationalStatus: value }));
+              }}
             />
           </FilterSection>
 
@@ -470,8 +493,11 @@ export function AssetsPage() {
           <FilterSection title="Lifecycle Status">
             <MultiSelectFilter
               options={lifecycleStatusOptions}
-              selected={getSelectedArray(filters.lifecycleStatus)}
-              onChange={(selected) => handleMultiSelectChange('lifecycleStatus', selected)}
+              selected={getSelectedArray(tempFilters.lifecycleStatus)}
+              onChange={(selected) => {
+                const value = selected.length === 1 ? selected[0] : selected.length > 0 ? selected : undefined;
+                setTempFilters(prev => ({ ...prev, lifecycleStatus: value }));
+              }}
             />
           </FilterSection>
 
@@ -479,8 +505,11 @@ export function AssetsPage() {
           <FilterSection title="Compliance RAG">
             <MultiSelectFilter
               options={complianceRAGOptions}
-              selected={getSelectedArray(filters.complianceRAG)}
-              onChange={(selected) => handleMultiSelectChange('complianceRAG', selected)}
+              selected={getSelectedArray(tempFilters.complianceRAG)}
+              onChange={(selected) => {
+                const value = selected.length === 1 ? selected[0] : selected.length > 0 ? selected : undefined;
+                setTempFilters(prev => ({ ...prev, complianceRAG: value }));
+              }}
             />
           </FilterSection>
 
@@ -488,8 +517,11 @@ export function AssetsPage() {
           <FilterSection title="Ownership">
             <MultiSelectFilter
               options={ownershipOptions}
-              selected={getSelectedArray(filters.ownership)}
-              onChange={(selected) => handleMultiSelectChange('ownership', selected)}
+              selected={getSelectedArray(tempFilters.ownership)}
+              onChange={(selected) => {
+                const value = selected.length === 1 ? selected[0] : selected.length > 0 ? selected : undefined;
+                setTempFilters(prev => ({ ...prev, ownership: value }));
+              }}
             />
           </FilterSection>
 
@@ -497,8 +529,11 @@ export function AssetsPage() {
           <FilterSection title="Responsible Team">
             <MultiSelectFilter
               options={responsibleTeamOptions}
-              selected={getSelectedArray(filters.responsibleTeam)}
-              onChange={(selected) => handleMultiSelectChange('responsibleTeam', selected)}
+              selected={getSelectedArray(tempFilters.responsibleTeam)}
+              onChange={(selected) => {
+                const value = selected.length === 1 ? selected[0] : selected.length > 0 ? selected : undefined;
+                setTempFilters(prev => ({ ...prev, responsibleTeam: value }));
+              }}
               searchable={true}
               placeholder="Search teams..."
             />
@@ -508,8 +543,11 @@ export function AssetsPage() {
           <FilterSection title="Criticality">
             <MultiSelectFilter
               options={criticalityOptions}
-              selected={getSelectedArray(filters.criticality)}
-              onChange={(selected) => handleMultiSelectChange('criticality', selected)}
+              selected={getSelectedArray(tempFilters.criticality)}
+              onChange={(selected) => {
+                const value = selected.length === 1 ? selected[0] : selected.length > 0 ? selected : undefined;
+                setTempFilters(prev => ({ ...prev, criticality: value }));
+              }}
             />
           </FilterSection>
 
@@ -517,21 +555,12 @@ export function AssetsPage() {
           <FilterSection title="Options">
             <Checkbox
               label="Include archived assets"
-              checked={filters.includeArchived || false}
-              onChange={(e) => setFilters((prev: AssetFilter) => ({ ...prev, includeArchived: e.target.checked }))}
+              checked={tempFilters.includeArchived || false}
+              onChange={(e) => setTempFilters((prev: AssetFilter) => ({ ...prev, includeArchived: e.target.checked }))}
             />
           </FilterSection>
-
-          {/* Clear All */}
-          {activeFilterCount > 0 && (
-            <div className="pt-4 border-t border-gray-200">
-              <Button variant="outline" size="sm" onClick={clearFilters} className="w-full">
-                Clear All Filters
-              </Button>
-            </div>
-          )}
         </div>
-      </FloatingFilterPanel>
+      </FilterPanel>
 
       {/* Bulk Actions Bar */}
       {selectedAssetIds.length > 0 && (
@@ -599,7 +628,10 @@ export function AssetsPage() {
         searchValue={search}
         onSearchChange={setSearch}
         searchPlaceholder="Search by Asset ID, client number, manufacturer, make, model, serial…"
-        onFilterClick={() => setIsFilterOpen(!isFilterOpen)}
+        onFilterClick={() => {
+          setTempFilters(filters);
+          setShowFilterPanel(true);
+        }}
         activeFilterCount={activeFilterCount}
         columns={columns}
         data={allAssets}

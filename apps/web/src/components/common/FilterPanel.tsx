@@ -26,9 +26,9 @@ export function FilterPanel({
 
   return (
     <>
-      {/* Backdrop */}
+      {/* Backdrop - dimmed background (optional, non-blocking) */}
       <div
-        className="fixed inset-0 bg-black bg-opacity-50 z-40 md:hidden"
+        className="fixed inset-0 bg-black bg-opacity-20 z-40 transition-opacity duration-300"
         onClick={onClose}
         aria-hidden="true"
       />
@@ -53,7 +53,7 @@ export function FilterPanel({
           </div>
 
           {/* Content */}
-          <div className="flex-1 overflow-y-auto p-6">
+          <div className="flex-1 overflow-y-auto p-6 pr-4">
             {children}
           </div>
 

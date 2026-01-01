@@ -9,6 +9,9 @@ export interface ExcelRow {
   SafetyCritical?: string | boolean;
   PhotoOnFail?: string | boolean;
   FailRequiresComment?: string | boolean;
+  HelpText?: string;
+  PhotoRequired?: string | boolean; // For Photo type items
+  SignatureRequired?: string | boolean; // For Signature type items
   Unit?: string;
   Min?: string | number;
   Max?: string | number;
@@ -28,7 +31,7 @@ export interface ImportResult {
     id: string;
     sectionId: string;
     question: string;
-    type: 'PassFail' | 'PassFailNA' | 'Number' | 'Text';
+    type: 'PassFail' | 'PassFailNA' | 'YesNo' | 'Number' | 'Text' | 'Date' | 'Time' | 'Photo' | 'Signature';
     required: boolean;
     safetyCritical: boolean;
     critical?: boolean; // Backward compatibility
@@ -55,7 +58,7 @@ function normalizeBoolean(value: any): boolean {
 }
 
 // Normalize ItemType
-function normalizeItemType(value: string): 'PassFail' | 'PassFailNA' | 'Number' | 'Text' | null {
+function normalizeItemType(value: string): 'PassFail' | 'PassFailNA' | 'YesNo' | 'Numeric' | 'Text' | 'Date' | 'Time' | 'Photo' | 'Signature' | null {
   const normalized = value.trim().toUpperCase().replace(/[\/_]/g, '');
   if (normalized.includes('PASSFAILNA') || normalized.includes('PASSFAILN/A') || normalized.includes('PASSFAILN-A')) {
     return 'PassFailNA';
@@ -63,11 +66,26 @@ function normalizeItemType(value: string): 'PassFail' | 'PassFailNA' | 'Number' 
   if (normalized.includes('PASSFAIL') || normalized.includes('PASS/FAIL')) {
     return 'PassFail';
   }
-  if (normalized.includes('NUMBER') || normalized.includes('NUM')) {
-    return 'Number';
+  if (normalized.includes('YESNO') || normalized.includes('YES/NO') || normalized.includes('BOOLEAN')) {
+    return 'YesNo';
+  }
+  if (normalized.includes('NUMBER') || normalized.includes('NUM') || normalized.includes('NUMERIC')) {
+    return 'Numeric';
   }
   if (normalized.includes('TEXT') || normalized.includes('STRING')) {
     return 'Text';
+  }
+  if (normalized.includes('DATE')) {
+    return 'Date';
+  }
+  if (normalized.includes('TIME')) {
+    return 'Time';
+  }
+  if (normalized.includes('PHOTO') || normalized.includes('IMAGE') || normalized.includes('EVIDENCE')) {
+    return 'Photo';
+  }
+  if (normalized.includes('SIGNATURE') || normalized.includes('SIGN')) {
+    return 'Signature';
   }
   // Handle DROPDOWN as Text for now (since our type system doesn't support it yet)
   if (normalized.includes('DROPDOWN') || normalized.includes('SELECT')) {
@@ -113,7 +131,7 @@ export function parseExcelData(rows: ExcelRow[]): ImportResult {
     // Normalize ItemType
     const itemType = normalizeItemType(row.ItemType);
     if (!itemType) {
-      errors.push({ row: rowNum, message: `Invalid ItemType: ${row.ItemType}. Must be one of: PASS_FAIL_NA, PassFail, Number, Text` });
+      errors.push({ row: rowNum, message: `Invalid ItemType: ${row.ItemType}. Must be one of: PassFail, PassFailNA, YesNo, Numeric, Text, Date, Time, Photo, Signature` });
       return;
     }
 
@@ -136,7 +154,7 @@ export function parseExcelData(rows: ExcelRow[]): ImportResult {
     }
 
     // Validate type-specific fields
-    if (itemType === 'Number') {
+    if (itemType === 'Numeric') {
       if (row.Min && isNaN(Number(row.Min))) {
         warnings.push({ row: rowNum, message: 'Min value is not numeric, ignoring' });
       }
@@ -149,10 +167,18 @@ export function parseExcelData(rows: ExcelRow[]): ImportResult {
       warnings.push({ row: rowNum, message: 'Unit/Min/Max are ignored for Text type' });
     }
 
-    if (itemType === 'PassFail' || itemType === 'PassFailNA') {
-      if (row.Unit || row.Min || row.Max) {
-        warnings.push({ row: rowNum, message: 'Unit/Min/Max are ignored for Pass/Fail types' });
-      }
+    if ((itemType === 'PassFail' || itemType === 'PassFailNA' || itemType === 'YesNo' || itemType === 'Date' || itemType === 'Time' || itemType === 'Photo' || itemType === 'Signature') && (row.Unit || row.Min || row.Max)) {
+      warnings.push({ row: rowNum, message: `Unit/Min/Max are ignored for ${itemType} type` });
+    }
+
+    // PhotoRequired is only relevant for Photo type
+    if (itemType !== 'Photo' && row.PhotoRequired) {
+      warnings.push({ row: rowNum, message: 'PhotoRequired is only applicable to Photo type items' });
+    }
+
+    // SignatureRequired is only relevant for Signature type
+    if (itemType !== 'Signature' && row.SignatureRequired) {
+      warnings.push({ row: rowNum, message: 'SignatureRequired is only applicable to Signature type items' });
     }
 
     // Create item
@@ -171,8 +197,20 @@ export function parseExcelData(rows: ExcelRow[]): ImportResult {
       failRequiresComment: safetyCritical ? true : normalizeBoolean(row.FailRequiresComment), // Auto-enable if safety critical
     };
 
+    // For Photo type, check PhotoRequired
+    if (itemType === 'Photo' && row.PhotoRequired !== undefined) {
+      // PhotoRequired is handled via the required field, but we can use it as a hint
+      // The actual required flag is already set above
+    }
+
+    // For Signature type, check SignatureRequired
+    if (itemType === 'Signature' && row.SignatureRequired !== undefined) {
+      // SignatureRequired is handled via the required field, but we can use it as a hint
+      // The actual required flag is already set above
+    }
+
     // Add type-specific fields
-    if (itemType === 'Number') {
+    if (itemType === 'Numeric') {
       if (row.Unit) item.unit = row.Unit.trim();
       if (row.Min && !isNaN(Number(row.Min))) {
         item.minValue = Number(row.Min);
@@ -207,30 +245,88 @@ export function parseExcelData(rows: ExcelRow[]): ImportResult {
 export function generateExcelTemplate(): ExcelRow[] {
   return [
     {
-      SectionName: 'General',
-      ItemText: 'Check guards fitted',
-      ItemType: 'PASS_FAIL_NA',
+      SectionName: 'All Item Types',
+      ItemText: 'Emergency stop working?',
+      ItemType: 'YesNo',
       Required: true,
       SafetyCritical: false,
-      PhotoOnFail: true,
+      PhotoOnFail: false,
       SortOrder: 1,
     },
     {
-      SectionName: 'General',
-      ItemText: 'Record oil pressure',
-      ItemType: 'NUMBER',
+      SectionName: 'All Item Types',
+      ItemText: 'Hydraulic leak check',
+      ItemType: 'PassFail',
       Required: true,
-      Unit: 'bar',
-      Min: 0,
-      Max: 300,
+      SafetyCritical: false,
+      PhotoOnFail: false,
       SortOrder: 2,
     },
     {
-      SectionName: 'Safety',
-      ItemText: 'PPE worn',
-      ItemType: 'TEXT',
+      SectionName: 'All Item Types',
+      ItemText: 'Daily checks complete',
+      ItemType: 'PassFailNA',
       Required: true,
-      SortOrder: 1,
+      SafetyCritical: false,
+      PhotoOnFail: false,
+      SortOrder: 3,
+    },
+    {
+      SectionName: 'All Item Types',
+      ItemText: 'Hours reading',
+      ItemType: 'Numeric',
+      Required: true,
+      Unit: 'hours',
+      Min: 0,
+      Max: 10000,
+      SortOrder: 4,
+    },
+    {
+      SectionName: 'All Item Types',
+      ItemText: 'Inspector notes',
+      ItemType: 'Text',
+      Required: false,
+      SafetyCritical: false,
+      PhotoOnFail: false,
+      SortOrder: 5,
+    },
+    {
+      SectionName: 'All Item Types',
+      ItemText: 'Inspection date',
+      ItemType: 'Date',
+      Required: true,
+      SafetyCritical: false,
+      PhotoOnFail: false,
+      SortOrder: 6,
+    },
+    {
+      SectionName: 'All Item Types',
+      ItemText: 'Inspection time',
+      ItemType: 'Time',
+      Required: true,
+      SafetyCritical: false,
+      PhotoOnFail: false,
+      SortOrder: 7,
+    },
+    {
+      SectionName: 'All Item Types',
+      ItemText: 'Upload photo of serial plate',
+      ItemType: 'Photo',
+      Required: true,
+      SafetyCritical: false,
+      PhotoRequired: true,
+      PhotoOnFail: false,
+      SortOrder: 8,
+    },
+    {
+      SectionName: 'All Item Types',
+      ItemText: 'Inspector signature',
+      ItemType: 'Signature',
+      Required: true,
+      SafetyCritical: false,
+      SignatureRequired: true,
+      PhotoOnFail: false,
+      SortOrder: 9,
     },
   ];
 }

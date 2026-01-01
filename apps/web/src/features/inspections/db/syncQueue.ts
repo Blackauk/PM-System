@@ -5,7 +5,9 @@ export type SyncQueueItemType =
   | 'updateInspection' 
   | 'submitInspection' 
   | 'approveInspection' 
-  | 'closeInspection';
+  | 'closeInspection'
+  | 'uploadPhoto'
+  | 'createDefect';
 
 export interface SyncQueueItem {
   id: string;
@@ -67,6 +69,9 @@ export async function flushSyncQueue(): Promise<{ success: number; failed: numbe
   let success = 0;
   let failed = 0;
 
+  const { getInspectionsDB } = await import('./schema');
+  const { updateInspection } = await import('./repository');
+
   // In Phase 1, we just simulate success
   for (const item of items) {
     try {
@@ -78,13 +83,43 @@ export async function flushSyncQueue(): Promise<{ success: number; failed: numbe
       //   await api.post('/inspections', item.data);
       // } else if (item.type === 'updateInspection') {
       //   await api.put(`/inspections/${item.inspectionId}`, item.data);
-      // } etc.
+      // } else if (item.type === 'uploadPhoto') {
+      //   const formData = new FormData();
+      //   formData.append('photo', item.data.file);
+      //   await api.post(`/inspections/${item.inspectionId}/photos`, formData);
+      // } else if (item.type === 'createDefect') {
+      //   await api.post('/defects', item.data);
+      // }
+
+      // Update inspection sync status on successful sync
+      if (item.type !== 'createDefect') {
+        try {
+          await updateInspection(item.inspectionId, {
+            syncStatus: 'synced',
+            syncedAt: new Date().toISOString(),
+          });
+        } catch (e) {
+          // Inspection might not exist, that's okay
+          console.warn('Failed to update inspection sync status:', e);
+        }
+      }
 
       await removeFromSyncQueue(item.id);
       success++;
     } catch (error) {
       const newRetries = item.retries + 1;
       if (newRetries >= 5) {
+        // Mark as failed after max retries
+        if (item.type !== 'createDefect') {
+          try {
+            await updateInspection(item.inspectionId, {
+              syncStatus: 'failed',
+              lastSyncAttempt: new Date().toISOString(),
+            });
+          } catch (e) {
+            console.warn('Failed to update inspection sync status:', e);
+          }
+        }
         await removeFromSyncQueue(item.id);
         failed++;
       } else {

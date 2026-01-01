@@ -3,7 +3,6 @@ import { Routes, Route, useLocation, Navigate } from 'react-router-dom';
 import { ErrorBoundary } from '../../../components/common/ErrorBoundary';
 import { PageHeader } from '../../../components/common/PageHeader';
 import { SettingsMenu } from '../components/SettingsMenu';
-import { SettingsOverview } from '../components/SettingsOverview';
 import { AppSettingsSection } from '../sections/AppSettingsSection';
 import { UsersRolesSection } from '../sections/UsersRolesSection';
 import { SitesLocationsSection } from '../sections/SitesLocationsSection';
@@ -28,11 +27,12 @@ export function SettingsPage() {
 
   const getDefaultPath = () => {
     const saved = localStorage.getItem('settings-last-section');
-    return saved || '/settings/overview';
+    // Default to users instead of overview
+    return saved || '/settings/users';
   };
 
   return (
-    <div className="p-6">
+    <div className="w-full p-6">
       <PageHeader
         title="Settings"
         subtitle="Manage system configuration and administration"
@@ -45,7 +45,7 @@ export function SettingsPage() {
         }
       />
 
-      <div className="mt-6 max-w-7xl mx-auto">
+      <div className="mt-6 w-full max-w-none">
         <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-6">
           {/* Left Menu */}
           <div>
@@ -54,8 +54,8 @@ export function SettingsPage() {
             </div>
           </div>
 
-          {/* Right Content */}
-          <div>
+          {/* Right Content - Full Width */}
+          <div className="w-full max-w-none">
             <ErrorBoundary
               fallback={({ error, resetError }) => (
                 <Card>
@@ -75,8 +75,8 @@ export function SettingsPage() {
                         <Button onClick={resetError} variant="primary">
                           Try Again
                         </Button>
-                        <Button onClick={() => window.location.href = '/settings/overview'} variant="outline">
-                          Go to Overview
+                        <Button onClick={() => window.location.href = '/settings/users'} variant="outline">
+                          Go to Users & Roles
                         </Button>
                       </div>
                     </div>
@@ -86,7 +86,6 @@ export function SettingsPage() {
             >
               <Routes>
                 <Route index element={<Navigate to={getDefaultPath()} replace />} />
-                <Route path="overview" element={<SettingsOverview />} />
                 <Route path="app-settings" element={<AppSettingsSection onSave={() => setLastSaved(new Date().toISOString())} />} />
                 <Route path="users" element={<UsersRolesSection />} />
                 <Route path="sites" element={<SitesLocationsSection />} />

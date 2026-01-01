@@ -5,7 +5,8 @@ import { Badge } from '../../../components/common/Badge';
 import { Button } from '../../../components/common/Button';
 import { Input } from '../../../components/common/Input';
 import { Modal } from '../../../components/common/Modal';
-import { FloatingFilterPanel, FilterSection } from '../../../components/common/FloatingFilterPanel';
+import { FilterPanel } from '../../../components/common/FilterPanel';
+import { FilterSection } from '../../../components/common/FilterSection';
 import { MultiSelectFilter } from '../../../components/common/MultiSelectFilter';
 import { FilterButton } from '../../../components/common/FilterButton';
 import { getShiftChangeovers, updatePMSchedule } from '../services';
@@ -29,7 +30,8 @@ export function PMCalendar({ schedules, filters, onScheduleClick, onFilterChange
   const [selectedSchedule, setSelectedSchedule] = useState<PMSchedule | null>(null);
   const [selectedShiftChangeover, setSelectedShiftChangeover] = useState<ShiftChangeoverEvent | null>(null);
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
-  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const [tempFilters, setTempFilters] = useState<Partial<PMScheduleFilter>>(filters || {});
   const [isRescheduleMode, setIsRescheduleMode] = useState(false);
   const [rescheduleData, setRescheduleData] = useState({
     nextDueDate: '',
@@ -326,7 +328,10 @@ export function PMCalendar({ schedules, filters, onScheduleClick, onFilterChange
               </div>
               <FilterButton
                 size="sm"
-                onClick={() => setIsFilterOpen(!isFilterOpen)}
+                onClick={() => {
+                  setTempFilters(filters || {});
+                  setShowFilterPanel(true);
+                }}
                 activeFilterCount={0}
               />
               <Button size="sm" variant="outline" onClick={goToToday}>
@@ -388,18 +393,30 @@ export function PMCalendar({ schedules, filters, onScheduleClick, onFilterChange
       </Card>
 
       {/* Filter Panel */}
-      <FloatingFilterPanel
-        isOpen={isFilterOpen}
-        onClose={() => setIsFilterOpen(false)}
-        anchorRef={filterButtonRef}
+      <FilterPanel
+        isOpen={showFilterPanel}
+        onClose={() => {
+          setShowFilterPanel(false);
+          setTempFilters(filters || {}); // Reset temp filters on close
+        }}
+        onApply={() => {
+          onFilterChange?.(tempFilters);
+          setShowFilterPanel(false);
+        }}
+        onReset={() => {
+          const emptyFilters: Partial<PMScheduleFilter> = {};
+          setTempFilters(emptyFilters);
+          onFilterChange?.(emptyFilters);
+        }}
+        title="PM Calendar Filters"
       >
         <div className="space-y-4">
           <FilterSection title="Site">
             <MultiSelectFilter
               options={mockSites.map((site) => ({ value: site.id, label: site.name }))}
-              selected={getSelectedArray(filters?.siteId)}
+              selected={getSelectedArray(tempFilters?.siteId)}
               onChange={(selected) => {
-                onFilterChange?.({ siteId: selected.length > 0 ? selected : undefined });
+                setTempFilters(prev => ({ ...prev, siteId: selected.length > 0 ? selected : undefined }));
               }}
             />
           </FilterSection>
@@ -410,9 +427,9 @@ export function PMCalendar({ schedules, filters, onScheduleClick, onFilterChange
                 { value: 'TimeBased', label: 'Time Based' },
                 { value: 'HoursBased', label: 'Hours Based' },
               ]}
-              selected={getSelectedArray(filters?.frequency)}
+              selected={getSelectedArray(tempFilters?.frequency)}
               onChange={(selected) => {
-                onFilterChange?.({ frequency: selected.length > 0 ? selected : undefined });
+                setTempFilters(prev => ({ ...prev, frequency: selected.length > 0 ? selected : undefined }));
               }}
             />
           </FilterSection>
@@ -422,9 +439,9 @@ export function PMCalendar({ schedules, filters, onScheduleClick, onFilterChange
               <label className="flex items-center gap-2">
                 <input
                   type="checkbox"
-                  checked={filters?.showDueSoon || false}
+                  checked={tempFilters?.showDueSoon || false}
                   onChange={(e) => {
-                    onFilterChange?.({ showDueSoon: e.target.checked ? true : undefined });
+                    setTempFilters(prev => ({ ...prev, showDueSoon: e.target.checked ? true : undefined }));
                   }}
                   className="rounded"
                 />
@@ -433,9 +450,9 @@ export function PMCalendar({ schedules, filters, onScheduleClick, onFilterChange
               <label className="flex items-center gap-2">
                 <input
                   type="checkbox"
-                  checked={filters?.showOverdue || false}
+                  checked={tempFilters?.showOverdue || false}
                   onChange={(e) => {
-                    onFilterChange?.({ showOverdue: e.target.checked ? true : undefined });
+                    setTempFilters(prev => ({ ...prev, showOverdue: e.target.checked ? true : undefined }));
                   }}
                   className="rounded"
                 />
@@ -444,9 +461,9 @@ export function PMCalendar({ schedules, filters, onScheduleClick, onFilterChange
               <label className="flex items-center gap-2">
                 <input
                   type="checkbox"
-                  checked={filters?.showCompleted || false}
+                  checked={tempFilters?.showCompleted || false}
                   onChange={(e) => {
-                    onFilterChange?.({ showCompleted: e.target.checked ? true : undefined });
+                    setTempFilters(prev => ({ ...prev, showCompleted: e.target.checked ? true : undefined }));
                   }}
                   className="rounded"
                 />
@@ -460,15 +477,15 @@ export function PMCalendar({ schedules, filters, onScheduleClick, onFilterChange
               <label className="flex items-center gap-2">
                 <input
                   type="checkbox"
-                  checked={filters?.showShiftChangeovers || false}
+                  checked={tempFilters?.showShiftChangeovers || false}
                   onChange={(e) => {
-                    onFilterChange?.({ showShiftChangeovers: e.target.checked ? true : undefined });
+                    setTempFilters(prev => ({ ...prev, showShiftChangeovers: e.target.checked ? true : undefined }));
                   }}
                   className="rounded"
                 />
                 <span className="text-sm">Show Shift Changeovers</span>
               </label>
-              {filters?.showShiftChangeovers && (
+              {tempFilters?.showShiftChangeovers && (
                 <div className="ml-6 mt-2 space-y-2">
                   <MultiSelectFilter
                     options={[
@@ -477,9 +494,9 @@ export function PMCalendar({ schedules, filters, onScheduleClick, onFilterChange
                       { value: 'AMHandover', label: 'AM Handover' },
                       { value: 'PMHandover', label: 'PM Handover' },
                     ]}
-                    selected={getSelectedArray(filters?.shiftType)}
+                    selected={getSelectedArray(tempFilters?.shiftType)}
                     onChange={(selected) => {
-                      onFilterChange?.({ shiftType: selected.length > 0 ? selected : undefined });
+                      setTempFilters(prev => ({ ...prev, shiftType: selected.length > 0 ? selected : undefined }));
                     }}
                   />
                 </div>
@@ -487,7 +504,7 @@ export function PMCalendar({ schedules, filters, onScheduleClick, onFilterChange
             </div>
           </FilterSection>
         </div>
-      </FloatingFilterPanel>
+      </FilterPanel>
 
       {/* Schedule Detail Modal */}
       <Modal

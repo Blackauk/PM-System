@@ -6,7 +6,8 @@ import { Input } from '../../../components/common/Input';
 import { Button } from '../../../components/common/Button';
 import { Badge } from '../../../components/common/Badge';
 import { SortableTable } from '../../../components/common/SortableTable';
-import { FloatingFilterPanel, FilterSection } from '../../../components/common/FloatingFilterPanel';
+import { FilterPanel } from '../../../components/common/FilterPanel';
+import { FilterSection } from '../../../components/common/FilterSection';
 import { MultiSelectFilter } from '../../../components/common/MultiSelectFilter';
 import { FilterButton } from '../../../components/common/FilterButton';
 import { getCheckSheetTemplates } from '../services';
@@ -18,7 +19,8 @@ export function CheckSheetsListPage() {
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState<{ category?: string[]; assetType?: string[]; isActive?: boolean }>({});
   const filterButtonRef = useRef<HTMLDivElement>(null);
-  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const [tempFilters, setTempFilters] = useState<{ category?: string[]; assetType?: string[]; isActive?: boolean }>({});
 
   const templates = getCheckSheetTemplates();
 
@@ -155,7 +157,10 @@ export function CheckSheetsListPage() {
             </div>
             <div ref={filterButtonRef}>
               <FilterButton
-                onClick={() => setIsFilterOpen(!isFilterOpen)}
+                onClick={() => {
+                  setTempFilters(filters);
+                  setShowFilterPanel(true);
+                }}
                 activeFilterCount={activeFilterCount}
               />
             </div>
@@ -169,63 +174,66 @@ export function CheckSheetsListPage() {
         </div>
       </Card>
 
-      <FloatingFilterPanel
-        isOpen={isFilterOpen}
-        onClose={() => setIsFilterOpen(false)}
-        anchorRef={filterButtonRef}
+      <FilterPanel
+        isOpen={showFilterPanel}
+        onClose={() => {
+          setShowFilterPanel(false);
+          setTempFilters(filters); // Reset temp filters on close
+        }}
+        onApply={() => {
+          setFilters(tempFilters);
+          setShowFilterPanel(false);
+        }}
+        onReset={() => {
+          const emptyFilters: { category?: string[]; assetType?: string[]; isActive?: boolean } = {};
+          setTempFilters(emptyFilters);
+          setFilters(emptyFilters);
+        }}
+        title="Check Sheet Filters"
       >
-        <FilterSection title="Category">
-          <MultiSelectFilter
-            options={categories}
-            selected={filters.category || []}
-            onChange={(selected) => setFilters((prev) => ({ ...prev, category: selected.length > 0 ? selected : undefined }))}
-          />
-        </FilterSection>
+        <div className="space-y-4">
+          <FilterSection title="Category">
+            <MultiSelectFilter
+              options={categories}
+              selected={tempFilters.category || []}
+              onChange={(selected) => setTempFilters(prev => ({ ...prev, category: selected.length > 0 ? selected : undefined }))}
+              placeholder="Select categories..."
+            />
+          </FilterSection>
 
-        <FilterSection title="Asset Type">
-          <MultiSelectFilter
-            options={assetTypes}
-            selected={filters.assetType || []}
-            onChange={(selected) => setFilters((prev) => ({ ...prev, assetType: selected.length > 0 ? selected : undefined }))}
-          />
-        </FilterSection>
+          <FilterSection title="Asset Type">
+            <MultiSelectFilter
+              options={assetTypes}
+              selected={tempFilters.assetType || []}
+              onChange={(selected) => setTempFilters(prev => ({ ...prev, assetType: selected.length > 0 ? selected : undefined }))}
+              placeholder="Select asset types..."
+            />
+          </FilterSection>
 
-        <FilterSection title="Status">
-          <div className="space-y-2">
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={filters.isActive === true}
-                onChange={(e) => setFilters((prev) => ({ ...prev, isActive: e.target.checked ? true : undefined }))}
-                className="rounded"
-              />
-              <span className="text-sm">Active</span>
-            </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={filters.isActive === false}
-                onChange={(e) => setFilters((prev) => ({ ...prev, isActive: e.target.checked ? false : undefined }))}
-                className="rounded"
-              />
-              <span className="text-sm">Archived</span>
-            </label>
-          </div>
-        </FilterSection>
-
-        <div className="pt-4 border-t">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setFilters({});
-              setSearch('');
-            }}
-          >
-            Clear All
-          </Button>
+          <FilterSection title="Status">
+            <div className="space-y-2">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={tempFilters.isActive === true}
+                  onChange={(e) => setTempFilters(prev => ({ ...prev, isActive: e.target.checked ? true : undefined }))}
+                  className="rounded"
+                />
+                <span className="text-sm">Active</span>
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={tempFilters.isActive === false}
+                  onChange={(e) => setTempFilters(prev => ({ ...prev, isActive: e.target.checked ? false : undefined }))}
+                  className="rounded"
+                />
+                <span className="text-sm">Archived</span>
+              </label>
+            </div>
+          </FilterSection>
         </div>
-      </FloatingFilterPanel>
+      </FilterPanel>
     </div>
   );
 }

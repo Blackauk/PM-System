@@ -7,7 +7,8 @@ import { Button } from '../../../components/common/Button';
 import { Badge } from '../../../components/common/Badge';
 import { Checkbox } from '../../../components/common/Checkbox';
 import { SortableTable } from '../../../components/common/SortableTable';
-import { FloatingFilterPanel, FilterSection } from '../../../components/common/FloatingFilterPanel';
+import { FilterPanel } from '../../../components/common/FilterPanel';
+import { FilterSection } from '../../../components/common/FilterSection';
 import { MultiSelectFilter } from '../../../components/common/MultiSelectFilter';
 import { FilterButton } from '../../../components/common/FilterButton';
 import { PMCalendar } from '../components/PMCalendar';
@@ -35,7 +36,8 @@ export function PMSchedulesListPage() {
     return {};
   });
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
-  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const [tempFilters, setTempFilters] = useState<PMScheduleFilter>(filters);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
   // Persist filters to localStorage
@@ -322,7 +324,10 @@ export function PMSchedulesListPage() {
               </div>
               <div ref={filterButtonRef}>
                 <FilterButton
-                  onClick={() => setIsFilterOpen(!isFilterOpen)}
+                  onClick={() => {
+                    setTempFilters(filters);
+                    setShowFilterPanel(true);
+                  }}
                   activeFilterCount={activeFilterCount}
                   size="sm"
                 />
@@ -483,17 +488,40 @@ export function PMSchedulesListPage() {
       )}
 
       {/* Filter & Sort Panel */}
-      <FloatingFilterPanel
-        isOpen={isFilterOpen}
-        onClose={() => setIsFilterOpen(false)}
-        anchorRef={filterButtonRef}
+      <FilterPanel
+        isOpen={showFilterPanel}
+        onClose={() => {
+          setShowFilterPanel(false);
+          setTempFilters(filters); // Reset temp filters on close
+        }}
+        onApply={() => {
+          setFilters(tempFilters);
+          setShowFilterPanel(false);
+        }}
+        onReset={() => {
+          const emptyFilters: PMScheduleFilter = {};
+          setTempFilters(emptyFilters);
+          setFilters(emptyFilters);
+        }}
+        title="PM Schedule Filters"
       >
         <div className="space-y-4">
           <FilterSection title="Site">
             <MultiSelectFilter
               options={mockSites.map((site) => ({ value: site.id, label: site.name }))}
-              selected={getSelectedArray(filters.siteId)}
-              onChange={(selected) => handleMultiSelectChange('siteId', selected)}
+              selected={getSelectedArray(tempFilters.siteId)}
+              onChange={(selected) => {
+                const value = selected.length > 0 ? selected : undefined;
+                setTempFilters(prev => {
+                  const newFilters = { ...prev };
+                  if (!value) {
+                    delete newFilters.siteId;
+                  } else {
+                    newFilters.siteId = value;
+                  }
+                  return newFilters;
+                });
+              }}
             />
           </FilterSection>
 
@@ -507,8 +535,19 @@ export function PMSchedulesListPage() {
                 { value: '6-Monthly', label: '6-Monthly' },
                 { value: 'Annual', label: 'Annual' },
               ]}
-              selected={getSelectedArray(filters.frequencyCategory)}
-              onChange={(selected) => handleMultiSelectChange('frequencyCategory', selected)}
+              selected={getSelectedArray(tempFilters.frequencyCategory)}
+              onChange={(selected) => {
+                const value = selected.length > 0 ? selected : undefined;
+                setTempFilters(prev => {
+                  const newFilters = { ...prev };
+                  if (!value) {
+                    delete newFilters.frequencyCategory;
+                  } else {
+                    newFilters.frequencyCategory = value;
+                  }
+                  return newFilters;
+                });
+              }}
             />
           </FilterSection>
 
@@ -520,8 +559,19 @@ export function PMSchedulesListPage() {
                 { value: 'Operational', label: 'Operational' },
                 { value: 'Housekeeping', label: 'Housekeeping' },
               ]}
-              selected={getSelectedArray(filters.importanceLevel)}
-              onChange={(selected) => handleMultiSelectChange('importanceLevel', selected)}
+              selected={getSelectedArray(tempFilters.importanceLevel)}
+              onChange={(selected) => {
+                const value = selected.length > 0 ? selected : undefined;
+                setTempFilters(prev => {
+                  const newFilters = { ...prev };
+                  if (!value) {
+                    delete newFilters.importanceLevel;
+                  } else {
+                    newFilters.importanceLevel = value;
+                  }
+                  return newFilters;
+                });
+              }}
             />
           </FilterSection>
 
@@ -529,18 +579,18 @@ export function PMSchedulesListPage() {
             <div className="space-y-2">
               <Checkbox
                 label="Due Soon"
-                checked={filters.showDueSoon || false}
-                onChange={(e) => setFilters(prev => ({ ...prev, showDueSoon: e.target.checked ? true : undefined }))}
+                checked={tempFilters.showDueSoon || false}
+                onChange={(e) => setTempFilters(prev => ({ ...prev, showDueSoon: e.target.checked ? true : undefined }))}
               />
               <Checkbox
                 label="Overdue"
-                checked={filters.showOverdue || false}
-                onChange={(e) => setFilters(prev => ({ ...prev, showOverdue: e.target.checked ? true : undefined }))}
+                checked={tempFilters.showOverdue || false}
+                onChange={(e) => setTempFilters(prev => ({ ...prev, showOverdue: e.target.checked ? true : undefined }))}
               />
               <Checkbox
                 label="Completed"
-                checked={filters.showCompleted || false}
-                onChange={(e) => setFilters(prev => ({ ...prev, showCompleted: e.target.checked ? true : undefined }))}
+                checked={tempFilters.showCompleted || false}
+                onChange={(e) => setTempFilters(prev => ({ ...prev, showCompleted: e.target.checked ? true : undefined }))}
               />
             </div>
           </FilterSection>
@@ -548,8 +598,19 @@ export function PMSchedulesListPage() {
           <FilterSection title="Responsible Team">
             <MultiSelectFilter
               options={mockResponsibleTeams.map((team) => ({ value: team, label: team }))}
-              selected={getSelectedArray(filters.assignedTeam)}
-              onChange={(selected) => handleMultiSelectChange('assignedTeam', selected)}
+              selected={getSelectedArray(tempFilters.assignedTeam)}
+              onChange={(selected) => {
+                const value = selected.length > 0 ? selected : undefined;
+                setTempFilters(prev => {
+                  const newFilters = { ...prev };
+                  if (!value) {
+                    delete newFilters.assignedTeam;
+                  } else {
+                    newFilters.assignedTeam = value;
+                  }
+                  return newFilters;
+                });
+              }}
             />
           </FilterSection>
 
@@ -559,8 +620,8 @@ export function PMSchedulesListPage() {
                 <input
                   type="radio"
                   name="isActive"
-                  checked={filters.isActive === undefined}
-                  onChange={() => setFilters(prev => ({ ...prev, isActive: undefined }))}
+                  checked={tempFilters.isActive === undefined}
+                  onChange={() => setTempFilters(prev => ({ ...prev, isActive: undefined }))}
                 />
                 <span className="text-sm">All</span>
               </label>
@@ -568,8 +629,8 @@ export function PMSchedulesListPage() {
                 <input
                   type="radio"
                   name="isActive"
-                  checked={filters.isActive === true}
-                  onChange={() => setFilters(prev => ({ ...prev, isActive: true }))}
+                  checked={tempFilters.isActive === true}
+                  onChange={() => setTempFilters(prev => ({ ...prev, isActive: true }))}
                 />
                 <span className="text-sm">Active</span>
               </label>
@@ -577,8 +638,8 @@ export function PMSchedulesListPage() {
                 <input
                   type="radio"
                   name="isActive"
-                  checked={filters.isActive === false}
-                  onChange={() => setFilters(prev => ({ ...prev, isActive: false }))}
+                  checked={tempFilters.isActive === false}
+                  onChange={() => setTempFilters(prev => ({ ...prev, isActive: false }))}
                 />
                 <span className="text-sm">Paused</span>
               </label>
@@ -589,10 +650,10 @@ export function PMSchedulesListPage() {
             <div className="space-y-2">
               <Checkbox
                 label="Show Shift Changeovers"
-                checked={filters.showShiftChangeovers || false}
-                onChange={(e) => setFilters(prev => ({ ...prev, showShiftChangeovers: e.target.checked ? true : undefined }))}
+                checked={tempFilters.showShiftChangeovers || false}
+                onChange={(e) => setTempFilters(prev => ({ ...prev, showShiftChangeovers: e.target.checked ? true : undefined }))}
               />
-              {filters.showShiftChangeovers && (
+              {tempFilters.showShiftChangeovers && (
                 <div className="ml-6 mt-2">
                   <MultiSelectFilter
                     options={[
@@ -601,21 +662,26 @@ export function PMSchedulesListPage() {
                       { value: 'AMHandover', label: 'AM Handover' },
                       { value: 'PMHandover', label: 'PM Handover' },
                     ]}
-                    selected={getSelectedArray(filters.shiftType)}
-                    onChange={(selected) => handleMultiSelectChange('shiftType', selected)}
+                    selected={getSelectedArray(tempFilters.shiftType)}
+                    onChange={(selected) => {
+                      const value = selected.length > 0 ? selected : undefined;
+                      setTempFilters(prev => {
+                        const newFilters = { ...prev };
+                        if (!value) {
+                          delete newFilters.shiftType;
+                        } else {
+                          newFilters.shiftType = value;
+                        }
+                        return newFilters;
+                      });
+                    }}
                   />
                 </div>
               )}
             </div>
           </FilterSection>
-
-          <div className="pt-2 border-t">
-            <Button size="sm" variant="outline" onClick={clearFilters} className="w-full">
-              Clear All
-            </Button>
-          </div>
         </div>
-      </FloatingFilterPanel>
+      </FilterPanel>
 
 
       {/* Create PM Schedule Modal */}

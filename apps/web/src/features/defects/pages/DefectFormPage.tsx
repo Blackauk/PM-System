@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useDefects } from '../context/DefectsContext';
+import { getDefectByCode } from '../api';
 import { Card } from '../../../components/common/Card';
 import { Button } from '../../../components/common/Button';
 import { Input } from '../../../components/common/Input';
@@ -12,26 +13,36 @@ import type { Defect, SeverityModel, DefectStatus, DefectSeverity, ComplianceTag
 
 export function DefectFormPage() {
   const navigate = useNavigate();
-  const { id } = useParams<{ id: string }>();
+  const { defectCode } = useParams<{ defectCode: string }>();
   const { user } = useAuth();
   const {
-    currentDefect,
     settings,
-    loading,
-    loadDefect,
     createNewDefect,
     updateDefectData,
   } = useDefects();
 
-  const isEdit = !!id;
+  const [currentDefect, setCurrentDefect] = useState<Defect | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const isEdit = !!defectCode;
   const canCreate = canRaiseDefect(user?.role);
   const canEdit = canEditDefect(user?.role);
 
   useEffect(() => {
-    if (id) {
-      loadDefect(id);
+    if (defectCode) {
+      setLoading(true);
+      getDefectByCode(defectCode)
+        .then((defect) => {
+          setCurrentDefect(defect);
+        })
+        .catch((err) => {
+          console.error('Error loading defect:', err);
+        })
+        .finally(() => {
+          setLoading(false);
+        });
     }
-  }, [id, loadDefect]);
+  }, [defectCode]);
 
   const [formData, setFormData] = useState<Partial<Defect>>({
     title: '',
@@ -98,8 +109,8 @@ export function DefectFormPage() {
     }
 
     try {
-      if (isEdit && id) {
-        await updateDefectData(id, {
+      if (isEdit && currentDefect) {
+        await updateDefectData(currentDefect.id, {
           ...formData,
           updatedBy: user!.id,
           updatedByName: `${user!.firstName} ${user!.lastName}`,

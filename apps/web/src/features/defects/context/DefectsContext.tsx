@@ -5,6 +5,7 @@ import {
   getAllDefects,
   queryDefects,
   getDefectById,
+  getDefectByCode,
   createDefect,
   updateDefect,
   deleteDefect,
@@ -12,7 +13,7 @@ import {
   addComment,
   addHistoryEntry,
   getDefectSettings,
-  updateDefectSettings,
+  updateDefectSetting
 } from '../db/repository';
 import { addToSyncQueue, getSyncQueueItems, flushSyncQueue } from '../db/syncQueue';
 import type { Defect, DefectFilter, DefectSettings, DefectComment } from '../types';
@@ -143,12 +144,29 @@ export function DefectsProvider({ children }: { children: ReactNode }) {
 
   const loadDefect = useCallback(async (id: string) => {
     try {
-      const defect = await getDefectById(id);
+      dispatch({ type: 'SET_LOADING', payload: true });
+      dispatch({ type: 'SET_ERROR', payload: null });
+      // Clear current defect immediately when loading a new one
+      dispatch({ type: 'SET_CURRENT_DEFECT', payload: null });
+      
+      // First try to get by ID (UUID)
+      let defect = await getDefectById(id);
+      
+      // If not found and the id looks like a defect code (DEF-000123 or DEF-0001), try by code
+      if (!defect && /^DEF-\d+$/.test(id)) {
+        defect = await getDefectByCode(id);
+      }
+      
       if (defect) {
         dispatch({ type: 'SET_CURRENT_DEFECT', payload: defect });
+      } else {
+        dispatch({ type: 'SET_CURRENT_DEFECT', payload: null });
       }
     } catch (error: any) {
       dispatch({ type: 'SET_ERROR', payload: error.message });
+      dispatch({ type: 'SET_CURRENT_DEFECT', payload: null });
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false });
     }
   }, []);
 

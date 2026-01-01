@@ -17,7 +17,7 @@ const menuItems: MenuItem[] = [
   { label: 'Dashboard', path: '/dashboard', icon: '📊' },
   { label: 'Assets', path: '/assets', icon: '🔧' },
   { label: 'Work Orders', path: '/work-orders', icon: '📋' },
-  { label: 'PM Schedules', path: '/pm-schedules', icon: '📅' },
+  { label: 'Schedules', path: '/schedules', icon: '📅' },
   { label: 'Inspections', path: '/inspections', icon: '✅' },
   { label: 'Defects', path: '/defects', icon: '⚠️' },
   { label: 'Reports', path: '/reports', icon: '📈', roles: ['Manager', 'Supervisor', 'Admin'] },

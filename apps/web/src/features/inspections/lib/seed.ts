@@ -5,7 +5,12 @@ import type { InspectionTemplate, Inspection } from '../types';
 export async function seedTemplates(): Promise<void> {
   const { getAllTemplates } = await import('../db/repository');
   const existing = await getAllTemplates();
-  if (existing.length > 0) {
+  
+  // Check if demo template already exists
+  const demoExists = existing.some(t => t.name === 'Demo – All Checklist Item Types');
+  
+  // If all templates exist (including demo), skip
+  if (existing.length > 0 && demoExists) {
     console.log('Templates already seeded, skipping...');
     return;
   }
@@ -103,7 +108,7 @@ export async function seedTemplates(): Promise<void> {
           id: '7',
           sectionId: '3',
           question: 'Check tire pressure (PSI)',
-          type: 'Number',
+          type: 'Numeric',
           required: false,
           critical: false,
           order: 7,
@@ -179,7 +184,7 @@ export async function seedTemplates(): Promise<void> {
           id: '3',
           sectionId: '2',
           question: 'Hydraulic system pressure (PSI)',
-          type: 'Number',
+          type: 'Numeric',
           required: true,
           critical: false,
           order: 3,
@@ -268,7 +273,7 @@ export async function seedTemplates(): Promise<void> {
           id: '3',
           sectionId: '2',
           question: 'Output voltage (V)',
-          type: 'Number',
+          type: 'Numeric',
           required: true,
           critical: false,
           order: 3,
@@ -319,13 +324,135 @@ export async function seedTemplates(): Promise<void> {
       updatedBy: 'system',
       updatedByName: 'System',
     },
+    {
+      name: 'Demo – All Checklist Item Types',
+      description: 'Demo template showcasing all supported checklist item types',
+      inspectionType: 'Daily',
+      // No assetTypeId restriction - can be used with any asset
+      version: 'v1',
+      versions: [
+        {
+          version: 'v1',
+          createdAt: new Date().toISOString(),
+          createdBy: 'system',
+          createdByName: 'System',
+        },
+      ],
+      sections: [
+        { id: 'demo-1', title: 'All Item Types', order: 1 },
+      ],
+      items: [
+        {
+          id: 'demo-1',
+          sectionId: 'demo-1',
+          question: 'Emergency stop working?',
+          type: 'YesNo',
+          required: true,
+          critical: false,
+          order: 1,
+          photoRequiredOnFail: false,
+        },
+        {
+          id: 'demo-2',
+          sectionId: 'demo-1',
+          question: 'Hydraulic leak check',
+          type: 'PassFail',
+          required: true,
+          critical: false,
+          order: 2,
+          photoRequiredOnFail: false,
+        },
+        {
+          id: 'demo-3',
+          sectionId: 'demo-1',
+          question: 'Daily checks complete',
+          type: 'PassFailNA',
+          required: true,
+          critical: false,
+          order: 3,
+          photoRequiredOnFail: false,
+        },
+        {
+          id: 'demo-4',
+          sectionId: 'demo-1',
+          question: 'Hours reading',
+          type: 'Numeric',
+          required: true,
+          critical: false,
+          order: 4,
+          unit: 'hours',
+          photoRequiredOnFail: false,
+        },
+        {
+          id: 'demo-5',
+          sectionId: 'demo-1',
+          question: 'Inspector notes',
+          type: 'Text',
+          required: false,
+          critical: false,
+          order: 5,
+          photoRequiredOnFail: false,
+        },
+        {
+          id: 'demo-6',
+          sectionId: 'demo-1',
+          question: 'Inspection date',
+          type: 'Date',
+          required: true,
+          critical: false,
+          order: 6,
+          photoRequiredOnFail: false,
+        },
+        {
+          id: 'demo-7',
+          sectionId: 'demo-1',
+          question: 'Inspection time',
+          type: 'Time',
+          required: true,
+          critical: false,
+          order: 7,
+          photoRequiredOnFail: false,
+        },
+        {
+          id: 'demo-8',
+          sectionId: 'demo-1',
+          question: 'Upload photo of serial plate',
+          type: 'Photo',
+          required: true,
+          critical: false,
+          order: 8,
+          photoRequiredOnFail: false,
+        },
+        {
+          id: 'demo-9',
+          sectionId: 'demo-1',
+          question: 'Inspector signature',
+          type: 'Signature',
+          required: true,
+          critical: false,
+          order: 9,
+          photoRequiredOnFail: false,
+        },
+      ],
+      isActive: true,
+      createdAt: new Date().toISOString(),
+      createdBy: 'system',
+      createdByName: 'System',
+      updatedAt: new Date().toISOString(),
+      updatedBy: 'system',
+      updatedByName: 'System',
+    },
   ];
 
+  // Only create templates that don't already exist
   for (const template of templates) {
-    await createTemplate(template);
+    const exists = existing.some(t => t.name === template.name);
+    if (!exists) {
+      await createTemplate(template);
+    }
   }
 
-  console.log(`Seeded ${templates.length} inspection templates`);
+  console.log(`Seeded inspection templates`);
 }
 
 // Seed sample inspections (optional, for dev)

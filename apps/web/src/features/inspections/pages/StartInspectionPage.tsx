@@ -6,6 +6,7 @@ import { Button } from '../../../components/common/Button';
 import { Input } from '../../../components/common/Input';
 import { Select } from '../../../components/common/Select';
 import { Badge } from '../../../components/common/Badge';
+import { SearchableMultiSelectAssetPicker } from '../../../components/common/SearchableMultiSelectAssetPicker';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useInspections } from '../context/InspectionsContext';
 import { getAssets } from '../../assets/services';
@@ -19,45 +20,42 @@ export function StartInspectionPage() {
   const assets = getAssets({});
   
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
-  const [selectedAssetId, setSelectedAssetId] = useState('');
+  const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
   const [selectedSiteId, setSelectedSiteId] = useState('');
   const [inspectionDate, setInspectionDate] = useState(new Date().toISOString().split('T')[0]);
   const [dueDate, setDueDate] = useState('');
   const [notes, setNotes] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [assetSearch, setAssetSearch] = useState('');
 
   useEffect(() => {
     loadTemplates();
   }, [loadTemplates]);
 
   useEffect(() => {
-    if (selectedAssetId) {
-      const asset = assets.find((a) => a.id === selectedAssetId);
+    if (selectedAssetIds.length > 0) {
+      const asset = assets.find((a) => a.id === selectedAssetIds[0]);
       if (asset) {
         setSelectedSiteId(asset.siteId);
       }
     }
-  }, [selectedAssetId, assets]);
+  }, [selectedAssetIds, assets]);
 
   const selectedTemplate = templates.find((t) => t.id === selectedTemplateId);
   
-  // Filter assets by search
-  const filteredAssets = assets.filter((asset) => {
-    if (!assetSearch) return true;
-    const searchLower = assetSearch.toLowerCase();
-    return (
-      asset.id.toLowerCase().includes(searchLower) ||
-      asset.assetTypeCode?.toLowerCase().includes(searchLower) ||
-      asset.make?.toLowerCase().includes(searchLower) ||
-      asset.model?.toLowerCase().includes(searchLower)
-    );
-  });
+  // Prepare asset options for picker
+  const assetOptions = assets.map((a) => ({
+    id: a.id,
+    label: `${a.assetTypeCode || ''} ${a.id} - ${a.make || ''} ${a.model || ''}`,
+    typeCode: a.assetTypeCode,
+    make: a.make,
+    model: a.model,
+    siteName: a.siteName,
+  }));
 
   // Filter templates by asset type if asset selected
-  const availableTemplates = selectedAssetId
+  const availableTemplates = selectedAssetIds.length > 0
     ? templates.filter((t) => {
-        const asset = assets.find((a) => a.id === selectedAssetId);
+        const asset = assets.find((a) => a.id === selectedAssetIds[0]);
         if (!asset) return true;
         // If template has assetTypeCode, filter by it
         if (t.assetTypeCode && asset.assetTypeCode) {
@@ -73,7 +71,7 @@ export function StartInspectionPage() {
     if (!selectedTemplateId) {
       newErrors.templateId = 'Template is required';
     }
-    if (!selectedAssetId) {
+    if (selectedAssetIds.length === 0) {
       newErrors.assetId = 'Asset is required';
     }
     if (!inspectionDate) {
@@ -95,8 +93,28 @@ export function StartInspectionPage() {
     if (!selectedTemplate || !user) return;
     
     try {
+      const selectedAssetId = selectedAssetIds[0];
       const selectedAsset = assets.find((a) => a.id === selectedAssetId);
       const selectedSite = mockSites.find((s) => s.id === selectedSiteId);
+      
+      // Initialize declarations from template config
+      const declarations = [];
+      if (selectedTemplate.config?.requireOperativeSignature) {
+        declarations.push({
+          id: `decl-${Date.now()}-operative`,
+          role: 'operative' as const,
+          declarationText: 'I declare that the information provided in this inspection is accurate and complete.',
+          signed: false,
+        });
+      }
+      if (selectedTemplate.config?.requireSupervisorSignature) {
+        declarations.push({
+          id: `decl-${Date.now()}-supervisor`,
+          role: 'supervisor' as const,
+          declarationText: 'I have reviewed this inspection and confirm it meets the required standards.',
+          signed: false,
+        });
+      }
       
       // Create inspection with status InProgress
       const inspection = await createNewInspection({
@@ -114,6 +132,7 @@ export function StartInspectionPage() {
         siteName: selectedSite?.name,
         inspectorId: user.id,
         inspectorName: user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.email || 'Unknown',
+        inspectorRole: user.role,
         inspectionDate: new Date(inspectionDate).toISOString(),
         startedAt: new Date().toISOString(),
         dueDate: dueDate ? new Date(dueDate).toISOString() : undefined,
@@ -122,6 +141,24 @@ export function StartInspectionPage() {
         answers: [], // Empty answers to start
         attachments: [],
         signatures: [],
+        declarations: declarations.length > 0 ? declarations : undefined,
+        history: [
+          {
+            id: `hist-${Date.now()}`,
+            at: new Date().toISOString(),
+            by: user.id,
+            byName: user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.email || 'Unknown',
+            byRole: user.role,
+            type: 'status_change',
+            summary: 'Inspection created from template',
+            data: {
+              templateId: selectedTemplate.id,
+              templateName: selectedTemplate.name,
+              templateVersion: selectedTemplate.version,
+            },
+          },
+        ],
+        revisionNumber: 1,
         createdAt: new Date().toISOString(),
         createdBy: user.id,
         createdByName: user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.email || 'Unknown',
@@ -152,47 +189,35 @@ export function StartInspectionPage() {
         <div className="p-6 space-y-6">
           {/* Asset Selection */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Select Asset *
-            </label>
-            <div className="space-y-2">
-              <Input
-                placeholder="Search by asset ID, type, make, or model..."
-                value={assetSearch}
-                onChange={(e) => setAssetSearch(e.target.value)}
-              />
-              <Select
-                value={selectedAssetId}
-                onChange={(e) => {
-                  setSelectedAssetId(e.target.value);
-                  if (errors.assetId) {
-                    const newErrors = { ...errors };
-                    delete newErrors.assetId;
-                    setErrors(newErrors);
-                  }
-                }}
-                options={[
-                  { value: '', label: 'Select asset...' },
-                ...filteredAssets.map((a) => ({
-                  value: a.id,
-                  label: `${a.assetTypeCode || ''} ${a.id} - ${a.make || ''} ${a.model || ''} (${a.siteName || ''})`,
-                })),
-                ]}
-                error={errors.assetId}
-              />
-            </div>
-            {selectedAssetId && (
+            <SearchableMultiSelectAssetPicker
+              assets={assetOptions}
+              selected={selectedAssetIds}
+              onChange={(selected) => {
+                setSelectedAssetIds(selected);
+                if (errors.assetId) {
+                  const newErrors = { ...errors };
+                  delete newErrors.assetId;
+                  setErrors(newErrors);
+                }
+              }}
+              placeholder="Search and select asset..."
+              label="Select Asset"
+              error={errors.assetId}
+              required
+              allowMultiple={false} // Single select for starting inspection
+            />
+            {selectedAssetIds.length > 0 && (
               <div className="mt-2 p-3 bg-blue-50 rounded-lg">
                 <div className="text-sm">
                   <Badge variant="info">
-                    {assets.find((a) => a.id === selectedAssetId)?.assetTypeCode || ''}
+                    {assets.find((a) => a.id === selectedAssetIds[0])?.assetTypeCode || ''}
                   </Badge>
                   <span className="font-medium">
-                    {assets.find((a) => a.id === selectedAssetId)?.make || ''}{' '}
-                    {assets.find((a) => a.id === selectedAssetId)?.model || ''}
+                    {assets.find((a) => a.id === selectedAssetIds[0])?.make || ''}{' '}
+                    {assets.find((a) => a.id === selectedAssetIds[0])?.model || ''}
                   </span>
                   <span className="text-gray-600 ml-2">
-                    • {assets.find((a) => a.id === selectedAssetId)?.siteName || ''}
+                    • {assets.find((a) => a.id === selectedAssetIds[0])?.siteName || ''}
                   </span>
                 </div>
               </div>
@@ -313,4 +338,3 @@ export function StartInspectionPage() {
     </div>
   );
 }
-
