@@ -12,11 +12,12 @@ import { Checkbox } from '../../../components/common/Checkbox';
 import { SortableTable } from '../../../components/common/SortableTable';
 import { ListPageTable } from '../../../components/common/ListPageTable';
 import { Select } from '../../../components/common/Select';
-import { FloatingFilterPanel, FilterSection } from '../../../components/common/FloatingFilterPanel';
+import { FilterPanel } from '../../../components/common/FilterPanel';
+import { FilterSection } from '../../../components/common/FilterSection';
 import { MultiSelectFilter } from '../../../components/common/MultiSelectFilter';
 import { FilterButton } from '../../../components/common/FilterButton';
 import { Tabs } from '../../../components/common/Tabs';
-import { ClipboardCheck, CheckCircle, AlertCircle, XCircle, AlertTriangle, Shield, MoreVertical, Eye, Download, Play } from 'lucide-react';
+import { ClipboardCheck, CheckCircle, AlertCircle, XCircle, AlertTriangle, Shield, MoreVertical, Eye, Download, Play, RefreshCw } from 'lucide-react';
 import { StatCard } from '../../../components/common/StatCard';
 import { WildcardGrid } from '../../../components/common/WildcardGrid';
 import { DropdownMenu } from '../../../components/common/DropdownMenu';
@@ -29,6 +30,11 @@ import { showToast } from '../../../components/common/Toast';
 import { CollapsibleCard } from '../../../components/common/CollapsibleCard';
 import { formatDateUK } from '../../../lib/formatters';
 import { getPDFBrandingSettings } from '../../settings/sections/PDFBrandingSection';
+import { SyncStatusModal } from '../components/SyncStatusModal';
+import { InspectionScheduleModal } from '../components/InspectionScheduleModal';
+import { SearchableMultiSelectAssetPicker } from '../../../components/common/SearchableMultiSelectAssetPicker';
+import { CheckboxOptionRow } from '../../../components/common/CheckboxOptionRow';
+import { generateScheduledInspections } from '../../schedules/services/scheduleGenerationService';
 import type { InspectionFilter, InspectionStatus, InspectionResult, InspectionType, Inspection } from '../types';
 
 type WildcardFilter = 'ALL' | 'COMPLETED_WEEK' | 'OVERDUE' | 'FAILED' | 'OPEN_DEFECTS' | 'COMPLIANCE';
@@ -40,10 +46,12 @@ export function InspectionsListPage() {
   const { isOnline, syncStatus } = useOffline();
   const {
     inspections,
+    templates,
     summary: contextSummary,
     syncQueueCount,
     loading,
     loadInspections,
+    loadTemplates,
     sync,
   } = useInspections();
   const { testModeEnabled } = useTestMode();
@@ -71,8 +79,14 @@ export function InspectionsListPage() {
   const [wildcardFilter, setWildcardFilter] = useState<WildcardFilter>('ALL');
   const filterButtonRef = useRef<HTMLDivElement>(null);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const [tempFilters, setTempFilters] = useState<InspectionFilter>(filters);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const menuRefs = useRef<Record<string, React.RefObject<HTMLButtonElement | null>>>({});
+  const [showSyncStatusModal, setShowSyncStatusModal] = useState(false);
+  const [selectedInspectionForSync, setSelectedInspectionForSync] = useState<Inspection | null>(null);
+  const [showInspectionScheduleModal, setShowInspectionScheduleModal] = useState(false);
+  const [selectedInspectionForSchedule, setSelectedInspectionForSchedule] = useState<Inspection | null>(null);
 
   // Testing Controls state
   const [showTestingControls, setShowTestingControls] = useState(false);
@@ -233,7 +247,21 @@ export function InspectionsListPage() {
 
   useEffect(() => {
     loadInspections();
-  }, [loadInspections]);
+    loadTemplates();
+    // Generate scheduled inspections on page load (non-blocking)
+    setTimeout(() => {
+      generateScheduledInspections().catch(err => {
+        console.error('Error generating scheduled inspections:', err);
+      });
+    }, 100);
+  }, [loadInspections, loadTemplates]);
+
+  // Sync tempFilters when panel opens
+  useEffect(() => {
+    if (showFilterPanel) {
+      setTempFilters(filters);
+    }
+  }, [showFilterPanel, filters]);
 
   // Get inspections from services (fallback if context is empty)
   const allInspections = useMemo(() => {
@@ -285,37 +313,92 @@ export function InspectionsListPage() {
 
     // Apply filters
     if (filters.status) {
-      filtered = filtered.filter((i) => i.status === filters.status);
+      const statuses = Array.isArray(filters.status) ? filters.status : [filters.status];
+      filtered = filtered.filter((i) => statuses.includes(i.status));
     }
     if (filters.result) {
-      filtered = filtered.filter((i) => i.result === filters.result);
+      const results = Array.isArray(filters.result) ? filters.result : [filters.result];
+      filtered = filtered.filter((i) => results.includes(i.result));
     }
     if (filters.inspectionType) {
       const types = Array.isArray(filters.inspectionType) ? filters.inspectionType : [filters.inspectionType];
       filtered = filtered.filter((i) => types.includes(i.inspectionType));
     }
+    if (filters.templateId) {
+      const templateIds = Array.isArray(filters.templateId) ? filters.templateId : [filters.templateId];
+      filtered = filtered.filter((i) => templateIds.includes(i.templateId));
+    }
     if (filters.siteId) {
       const sites = Array.isArray(filters.siteId) ? filters.siteId : [filters.siteId];
       filtered = filtered.filter((i) => sites.includes(i.siteId || ''));
     }
+    if (filters.locationId) {
+      const locations = Array.isArray(filters.locationId) ? filters.locationId : [filters.locationId];
+      filtered = filtered.filter((i) => i.locationId && locations.includes(i.locationId));
+    }
     if (filters.assetId) {
       filtered = filtered.filter((i) => i.assetId === filters.assetId);
     }
+    if (filters.inspectorId) {
+      const inspectors = Array.isArray(filters.inspectorId) ? filters.inspectorId : [filters.inspectorId];
+      filtered = filtered.filter((i) => inspectors.includes(i.inspectorId));
+    }
+    if (filters.hasDefects) {
+      filtered = filtered.filter((i) => i.linkedDefectIds && i.linkedDefectIds.length > 0);
+    }
+    if (filters.isCompliance) {
+      filtered = filtered.filter((i) => {
+        return i.items.some((item) => item.complianceTag === 'PUWER' || item.complianceTag === 'LOLER');
+      });
+    }
+    if (filters.completedDateFrom) {
+      filtered = filtered.filter((i) => {
+        if (!i.completedAt) return false;
+        return new Date(i.completedAt) >= new Date(filters.completedDateFrom!);
+      });
+    }
+    if (filters.completedDateTo) {
+      filtered = filtered.filter((i) => {
+        if (!i.completedAt) return false;
+        return new Date(i.completedAt) <= new Date(filters.completedDateTo!);
+      });
+    }
+    if (filters.scheduledDateFrom) {
+      filtered = filtered.filter((i) => {
+        if (!i.inspectionDate) return false;
+        return new Date(i.inspectionDate) >= new Date(filters.scheduledDateFrom!);
+      });
+    }
+    if (filters.scheduledDateTo) {
+      filtered = filtered.filter((i) => {
+        if (!i.inspectionDate) return false;
+        return new Date(i.inspectionDate) <= new Date(filters.scheduledDateTo!);
+      });
+    }
     
-    // Status filters (OR logic)
-    if (filters.showOverdue || filters.showFailed || filters.showDueSoon) {
+    // Overdue filter (from sidebar)
+    if (filters.showOverdue) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      filtered = filtered.filter((i) => {
+        if (!i.dueDate) return false;
+        const dueDate = new Date(i.dueDate);
+        dueDate.setHours(0, 0, 0, 0);
+        return dueDate < today && i.status !== 'Closed' && i.status !== 'Approved';
+      });
+    }
+    
+    // Status filters (OR logic) - legacy support
+    if (filters.showFailed || filters.showDueSoon) {
       const today = new Date();
       const nextWeek = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
       filtered = filtered.filter((i) => {
-        const isOverdue = filters.showOverdue && i.dueDate && 
-          new Date(i.dueDate) < today && 
-          i.status !== 'Closed';
         const isFailed = filters.showFailed && i.result === 'Fail';
         const isDueSoon = filters.showDueSoon && i.dueDate && 
           new Date(i.dueDate) > new Date() &&
           new Date(i.dueDate) <= nextWeek &&
           i.status !== 'Closed';
-        return isOverdue || isFailed || isDueSoon;
+        return isFailed || isDueSoon;
       });
     }
 
@@ -469,13 +552,33 @@ export function InspectionsListPage() {
   const activeFilterCount = useMemo(() => {
     let count = 0;
     // Count status filter
-    if (filters.status) count++;
+    if (filters.status) {
+      if (Array.isArray(filters.status)) {
+        count += filters.status.length > 0 ? 1 : 0;
+      } else {
+        count++;
+      }
+    }
     // Count result filter
-    if (filters.result) count++;
+    if (filters.result) {
+      if (Array.isArray(filters.result)) {
+        count += filters.result.length > 0 ? 1 : 0;
+      } else {
+        count++;
+      }
+    }
     // Count inspection type (array or single)
     if (filters.inspectionType) {
       if (Array.isArray(filters.inspectionType)) {
         count += filters.inspectionType.length > 0 ? 1 : 0;
+      } else {
+        count++;
+      }
+    }
+    // Count template filter
+    if (filters.templateId) {
+      if (Array.isArray(filters.templateId)) {
+        count += filters.templateId.length > 0 ? 1 : 0;
       } else {
         count++;
       }
@@ -488,20 +591,36 @@ export function InspectionsListPage() {
         count++;
       }
     }
+    // Count location filter
+    if (filters.locationId) {
+      if (Array.isArray(filters.locationId)) {
+        count += filters.locationId.length > 0 ? 1 : 0;
+      } else {
+        count++;
+      }
+    }
     // Count asset filter
     if (filters.assetId) count++;
+    // Count inspector filter
+    if (filters.inspectorId) {
+      if (Array.isArray(filters.inspectorId)) {
+        count += filters.inspectorId.length > 0 ? 1 : 0;
+      } else {
+        count++;
+      }
+    }
     // Count status checkboxes
     if (filters.showOverdue) count++;
     if (filters.showFailed) count++;
     if (filters.showDueSoon) count++;
-    // Count date range
-    if (filters.dateFrom || filters.dateTo) count++;
-    // Count assigned to
-    if (filters.inspectorId) count++;
-    // Count quick filter
-    if (activeQuickFilter) count++;
+    // Count date ranges
+    if (filters.completedDateFrom || filters.completedDateTo) count++;
+    if (filters.scheduledDateFrom || filters.scheduledDateTo) count++;
+    // Count boolean filters
+    if (filters.hasDefects) count++;
+    if (filters.isCompliance) count++;
     return count;
-  }, [filters, activeQuickFilter]);
+  }, [filters]);
 
   const getResultBadge = (result: InspectionResult) => {
     const variants: Record<InspectionResult, 'default' | 'success' | 'error' | 'warning'> = {
@@ -910,6 +1029,19 @@ export function InspectionsListPage() {
 
   return (
     <div className="p-6 space-y-4">
+      {/* Offline Status Badges */}
+      <div className="flex items-center justify-end gap-2">
+        {!isOnline && (
+          <Badge variant="warning" size="sm">
+            Offline Mode ({syncQueueCount} pending)
+          </Badge>
+        )}
+        {isOnline && syncQueueCount > 0 && (
+          <Badge variant="info" size="sm" onClick={sync} className="cursor-pointer">
+            {syncQueueCount} pending sync
+          </Badge>
+        )}
+      </div>
       {/* Testing Controls Panel */}
       {testModeEnabled && (
         <CollapsibleCard
@@ -1042,6 +1174,20 @@ export function InspectionsListPage() {
         />
       </WildcardGrid>
 
+      {/* Offline Status Badges */}
+      <div className="flex items-center justify-end gap-2">
+        {!isOnline && (
+          <Badge variant="warning" size="sm">
+            Offline Mode ({syncQueueCount} pending)
+          </Badge>
+        )}
+        {isOnline && syncQueueCount > 0 && (
+          <Badge variant="info" size="sm" onClick={sync} className="cursor-pointer">
+            {syncQueueCount} pending sync
+          </Badge>
+        )}
+      </div>
+
       <div className="space-y-6">
           {/* Inspections Table */}
           {loading ? (
@@ -1053,7 +1199,10 @@ export function InspectionsListPage() {
               searchValue={search}
               onSearchChange={setSearch}
               searchPlaceholder="Search by inspection ID, template, asset, inspector…"
-              onFilterClick={() => setIsFilterOpen(!isFilterOpen)}
+              onFilterClick={() => {
+                setTempFilters(filters);
+                setShowFilterPanel(true);
+              }}
               activeFilterCount={activeFilterCount}
               filterButtonRef={filterButtonRef}
               columns={[
@@ -1209,6 +1358,17 @@ export function InspectionsListPage() {
                             handleDownloadPDF(row);
                           },
                         });
+
+                        // Add Sync Status option
+                        menuItems.push({
+                          label: 'Sync Status',
+                          icon: RefreshCw,
+                          onClick: () => {
+                            setSelectedInspectionForSync(row);
+                            setShowSyncStatusModal(true);
+                            setOpenMenuId(null);
+                          },
+                        });
                         
                         return (
                           <div className="relative">
@@ -1261,18 +1421,32 @@ export function InspectionsListPage() {
                 getRowId={(row) => row.id}
                 showingText={`Showing ${filteredInspections.length} inspection${filteredInspections.length !== 1 ? 's' : ''}`}
                 headerActions={
-                  canCreate ? (
-                    <div className="flex items-center gap-2">
-                      {(['Manager', 'Admin'].includes(user?.role || '')) && (
-                        <Button variant="outline" onClick={() => navigate('/inspections/create')} size="sm" title="Create a new inspection template">
-                          Create Inspection
-                        </Button>
-                      )}
-                      <Button onClick={() => navigate('/inspections/start')} variant="primary" size="sm" title="Start an inspection from an existing template">
-                        Start Inspection
+                  <div className="flex items-center gap-2">
+                    {/* Sync Info Button */}
+                    {(syncQueueCount > 0 || !isOnline) && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowSyncStatusModal(true)}
+                        title="View sync status"
+                      >
+                        <RefreshCw className="w-4 h-4 mr-2" />
+                        Sync {syncQueueCount > 0 && `(${syncQueueCount})`}
                       </Button>
-                    </div>
-                  ) : undefined
+                    )}
+                    {canCreate && (
+                      <>
+                        {(['Manager', 'Admin'].includes(user?.role || '')) && (
+                          <Button variant="outline" onClick={() => navigate('/inspections/create')} size="sm" title="Create a new inspection template">
+                            Create Inspection
+                          </Button>
+                        )}
+                        <Button onClick={() => navigate('/inspections/start')} variant="primary" size="sm" title="Start an inspection from an existing template">
+                          Start Inspection
+                        </Button>
+                      </>
+                    )}
+                  </div>
                 }
                 emptyMessage={
                   allInspections.length === 0 
@@ -1283,22 +1457,60 @@ export function InspectionsListPage() {
           )}
         </div>
 
-      {/* Floating Filter Panel */}
-      <FloatingFilterPanel
-        isOpen={isFilterOpen}
-        onClose={() => setIsFilterOpen(false)}
-        anchorRef={filterButtonRef}
+      {/* Filter Panel - Right Side Slide-Over Sidebar */}
+      <FilterPanel
+        isOpen={showFilterPanel}
+        onClose={() => {
+          setShowFilterPanel(false);
+          setTempFilters(filters); // Reset temp filters on close
+        }}
+        onApply={() => {
+          setFilters(tempFilters);
+          localStorage.setItem('inspections-filters', JSON.stringify(tempFilters));
+          setShowFilterPanel(false);
+        }}
+        onReset={() => {
+          const emptyFilters: InspectionFilter = {};
+          setTempFilters(emptyFilters);
+          setFilters(emptyFilters);
+          setActiveQuickFilter(null);
+          setWildcardFilter('ALL');
+          localStorage.removeItem('inspections-filters');
+        }}
+        title="Inspection Filters"
       >
         <div className="space-y-4">
-          <FilterSection title="Site">
+          {/* Status Filter */}
+          <FilterSection title="Status">
             <MultiSelectFilter
-              options={(mockSites ?? []).map((site) => ({ value: site.id, label: site.name }))}
-              selected={Array.isArray(filters.siteId) ? filters.siteId : filters.siteId ? [filters.siteId] : []}
-              onChange={(selected) => handleFilterChange('siteId', selected.length === 1 ? selected[0] : selected)}
-              placeholder="Select sites..."
+              options={[
+                { value: 'Draft', label: 'Draft' },
+                { value: 'InProgress', label: 'In Progress' },
+                { value: 'Submitted', label: 'Submitted' },
+                { value: 'Approved', label: 'Approved' },
+                { value: 'Closed', label: 'Closed' },
+              ]}
+              selected={Array.isArray(tempFilters.status) ? tempFilters.status : tempFilters.status ? [tempFilters.status] : []}
+              onChange={(selected) => setTempFilters(prev => ({ ...prev, status: selected.length === 1 ? selected[0] : selected.length > 0 ? selected : undefined }))}
+              placeholder="Select statuses..."
             />
           </FilterSection>
-          
+
+          {/* Result Filter */}
+          <FilterSection title="Result">
+            <MultiSelectFilter
+              options={[
+                { value: 'Pass', label: 'Pass' },
+                { value: 'Fail', label: 'Fail' },
+                { value: 'Pending', label: 'Pending' },
+              ]}
+              selected={Array.isArray(tempFilters.result) ? tempFilters.result : tempFilters.result ? [tempFilters.result] : []}
+              onChange={(selected) => setTempFilters(prev => ({ ...prev, result: selected.length === 1 ? selected[0] : selected.length > 0 ? selected : undefined }))}
+              placeholder="Select results..."
+            />
+          </FilterSection>
+
+          {/* Inspection Type Filter */}
           <FilterSection title="Inspection Type">
             <MultiSelectFilter
               options={[
@@ -1309,51 +1521,173 @@ export function InspectionsListPage() {
                 { value: 'PreUse', label: 'Pre-Use' },
                 { value: 'TimeBased', label: 'Time-Based' },
               ]}
-              selected={Array.isArray(filters.inspectionType) ? filters.inspectionType : filters.inspectionType ? [filters.inspectionType] : []}
-              onChange={(selected) => handleFilterChange('inspectionType', selected.length === 1 ? selected[0] : selected)}
+              selected={Array.isArray(tempFilters.inspectionType) ? tempFilters.inspectionType : tempFilters.inspectionType ? [tempFilters.inspectionType] : []}
+              onChange={(selected) => setTempFilters(prev => ({ ...prev, inspectionType: selected.length === 1 ? selected[0] : selected.length > 0 ? selected : undefined }))}
               placeholder="Select types..."
             />
           </FilterSection>
-          
-          <FilterSection title="Status">
+
+          {/* Template Filter */}
+          <FilterSection title="Template / Checklist">
+            <MultiSelectFilter
+              options={(templates || []).filter(t => t.isActive).map((template) => ({ value: template.id, label: template.name }))}
+              selected={Array.isArray(tempFilters.templateId) ? tempFilters.templateId : tempFilters.templateId ? [tempFilters.templateId] : []}
+              onChange={(selected) => setTempFilters(prev => ({ ...prev, templateId: selected.length === 1 ? selected[0] : selected.length > 0 ? selected : undefined }))}
+              placeholder="Select templates..."
+            />
+          </FilterSection>
+
+          {/* Site Filter */}
+          <FilterSection title="Site">
+            <MultiSelectFilter
+              options={(mockSites ?? []).map((site) => ({ value: site.id, label: site.name }))}
+              selected={Array.isArray(tempFilters.siteId) ? tempFilters.siteId : tempFilters.siteId ? [tempFilters.siteId] : []}
+              onChange={(selected) => setTempFilters(prev => ({ ...prev, siteId: selected.length === 1 ? selected[0] : selected.length > 0 ? selected : undefined }))}
+              placeholder="Select sites..."
+            />
+          </FilterSection>
+
+          {/* Location Filter - if available */}
+          {allInspections.some(i => i.locationId) && (
+            <FilterSection title="Location">
+              <MultiSelectFilter
+                options={Array.from(new Set(allInspections.filter(i => i.locationId && i.locationName).map(i => ({ id: i.locationId!, name: i.locationName! }))))
+                  .map(loc => ({ value: loc.id, label: loc.name }))}
+                selected={Array.isArray(tempFilters.locationId) ? tempFilters.locationId : tempFilters.locationId ? [tempFilters.locationId] : []}
+                onChange={(selected) => setTempFilters(prev => ({ ...prev, locationId: selected.length === 1 ? selected[0] : selected.length > 0 ? selected : undefined }))}
+                placeholder="Select locations..."
+              />
+            </FilterSection>
+          )}
+
+          {/* Asset Filter */}
+          <FilterSection title="Asset">
+            <Select
+              value={tempFilters.assetId || ''}
+              onChange={(e) => setTempFilters(prev => ({ ...prev, assetId: e.target.value || undefined }))}
+              options={[
+                { value: '', label: 'All Assets' },
+                ...Array.from(new Set(allInspections.filter(i => i.assetId).map(i => i.assetId!)))
+                  .map(assetId => {
+                    const inspection = allInspections.find(i => i.assetId === assetId);
+                    return {
+                      value: assetId,
+                      label: `${assetId}${inspection?.assetTypeCode ? ` (${inspection.assetTypeCode})` : ''}`,
+                    };
+                  }),
+              ]}
+            />
+          </FilterSection>
+
+          {/* Inspector Filter */}
+          <FilterSection title="Assigned To / Inspector">
+            <MultiSelectFilter
+              options={Array.from(new Set(allInspections.filter(i => i.inspectorId && i.inspectorName).map(i => ({ id: i.inspectorId!, name: i.inspectorName! }))))
+                .map(insp => ({ value: insp.id, label: insp.name }))}
+              selected={Array.isArray(tempFilters.inspectorId) ? tempFilters.inspectorId : tempFilters.inspectorId ? [tempFilters.inspectorId] : []}
+              onChange={(selected) => setTempFilters(prev => ({ ...prev, inspectorId: selected.length === 1 ? selected[0] : selected.length > 0 ? selected : undefined }))}
+              placeholder="Select inspectors..."
+            />
+          </FilterSection>
+
+          {/* Completed Date Range */}
+          <FilterSection title="Completed Date Range">
             <div className="space-y-2">
-              <Checkbox
-                label="Overdue"
-                checked={filters.showOverdue || false}
-                onChange={(e) => handleFilterChange('showOverdue', e.target.checked)}
+              <Input
+                type="date"
+                label="From"
+                value={tempFilters.completedDateFrom || ''}
+                onChange={(e) => setTempFilters(prev => ({ ...prev, completedDateFrom: e.target.value || undefined }))}
               />
-              <Checkbox
-                label="Failed"
-                checked={filters.showFailed || false}
-                onChange={(e) => handleFilterChange('showFailed', e.target.checked)}
-              />
-              <Checkbox
-                label="Due Soon"
-                checked={filters.showDueSoon || false}
-                onChange={(e) => handleFilterChange('showDueSoon', e.target.checked)}
-              />
-              <Checkbox
-                label="Completed"
-                checked={filters.status === 'Completed' || false}
-                onChange={(e) => handleFilterChange('status', e.target.checked ? 'Completed' : undefined)}
+              <Input
+                type="date"
+                label="To"
+                value={tempFilters.completedDateTo || ''}
+                onChange={(e) => setTempFilters(prev => ({ ...prev, completedDateTo: e.target.value || undefined }))}
               />
             </div>
           </FilterSection>
-          
-          <div className="flex gap-2 pt-2 border-t">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setFilters({});
-                localStorage.removeItem('inspections-filters');
-              }}
-            >
-              Clear All
-            </Button>
-          </div>
+
+          {/* Scheduled Date Range */}
+          <FilterSection title="Scheduled Date Range">
+            <div className="space-y-2">
+              <Input
+                type="date"
+                label="From"
+                value={tempFilters.scheduledDateFrom || ''}
+                onChange={(e) => setTempFilters(prev => ({ ...prev, scheduledDateFrom: e.target.value || undefined }))}
+              />
+              <Input
+                type="date"
+                label="To"
+                value={tempFilters.scheduledDateTo || ''}
+                onChange={(e) => setTempFilters(prev => ({ ...prev, scheduledDateTo: e.target.value || undefined }))}
+              />
+            </div>
+          </FilterSection>
+
+          {/* Has Defects Filter */}
+          <FilterSection title="Has Defects">
+            <div className="space-y-1">
+              <CheckboxOptionRow
+                checked={tempFilters.hasDefects === true}
+                onChange={(checked) => setTempFilters(prev => ({ ...prev, hasDefects: checked ? true : undefined }))}
+                label="Show inspections with defects only"
+              />
+            </div>
+          </FilterSection>
+
+          {/* Compliance / Statutory Filter */}
+          <FilterSection title="Compliance / Statutory">
+            <div className="space-y-1">
+              <CheckboxOptionRow
+                checked={tempFilters.isCompliance === true}
+                onChange={(checked) => setTempFilters(prev => ({ ...prev, isCompliance: checked ? true : undefined }))}
+                label="Show compliance inspections only"
+              />
+            </div>
+          </FilterSection>
+
+          {/* Overdue Only Quick Toggle */}
+          <FilterSection title="Overdue Only">
+            <div className="space-y-1">
+              <CheckboxOptionRow
+                checked={tempFilters.showOverdue === true}
+                onChange={(checked) => setTempFilters(prev => ({ ...prev, showOverdue: checked ? true : undefined }))}
+                label="Show overdue inspections only"
+              />
+            </div>
+          </FilterSection>
         </div>
-      </FloatingFilterPanel>
+      </FilterPanel>
+
+
+      {/* Sync Status Modal */}
+      <SyncStatusModal
+        isOpen={showSyncStatusModal}
+        onClose={() => {
+          setShowSyncStatusModal(false);
+          setSelectedInspectionForSync(null);
+        }}
+        inspection={selectedInspectionForSync}
+      />
+
+      {/* Inspection Schedule Modal */}
+      {selectedInspectionForSchedule && (
+        <InspectionScheduleModal
+          isOpen={showInspectionScheduleModal}
+          onClose={() => {
+            setShowInspectionScheduleModal(false);
+            setSelectedInspectionForSchedule(null);
+          }}
+          onSuccess={() => {
+            loadInspections();
+            setShowInspectionScheduleModal(false);
+            setSelectedInspectionForSchedule(null);
+          }}
+          inspection={selectedInspectionForSchedule}
+        />
+      )}
       
     </div>
   );

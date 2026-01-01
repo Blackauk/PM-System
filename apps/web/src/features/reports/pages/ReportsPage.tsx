@@ -26,10 +26,13 @@ import { getWorkOrders } from '../../work-orders/services';
 import { getAssets, getAssetTypes, mockSites } from '../../assets/services';
 import { getPMSchedules } from '../../pm-schedules/services';
 import { GenerateReportModal } from '../components/GenerateReportModal';
-import { Download, FileText, X, CheckCircle, XCircle, AlertTriangle, ClipboardCheck, Clock, AlertCircle, ClipboardList, Maximize } from 'lucide-react';
+import { ScheduledReportsSidebar } from '../components/ScheduledReportsSidebar';
+import { EmailDeliveriesSidebar } from '../components/EmailDeliveriesSidebar';
+import { Download, FileText, X, CheckCircle, XCircle, AlertTriangle, ClipboardCheck, Clock, AlertCircle, ClipboardList, Maximize, Calendar, Mail } from 'lucide-react';
 import { StatCard } from '../../../components/common/StatCard';
 import { WildcardGrid } from '../../../components/common/WildcardGrid';
 import { SavedReportsIndicator } from '../components/SavedReportsIndicator';
+import { useAuth } from '../../../contexts/AuthContext';
 import type { Inspection } from '../../inspections/types';
 import type { Defect } from '../../defects/types';
 import type { WorkOrder } from '../../work-orders/types';
@@ -51,8 +54,9 @@ export function ReportsPage() {
     return saved ? JSON.parse(saved) : {};
   });
   const [reportsTab, setReportsTab] = useState<'overview' | 'saved' | 'scheduled'>('overview');
-  const [showScheduleModal, setShowScheduleModal] = useState(false);
-  const [editingSchedule, setEditingSchedule] = useState<any>(null);
+  const [showScheduledReportsSidebar, setShowScheduledReportsSidebar] = useState(false);
+  const [showEmailDeliveriesSidebar, setShowEmailDeliveriesSidebar] = useState(false);
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'inspections' | 'defects' | 'workOrders' | 'assets'>('inspections');
   const [tableSearch, setTableSearch] = useState('');
   const [showGenerateModal, setShowGenerateModal] = useState(false);
@@ -635,6 +639,33 @@ export function ReportsPage() {
         </div>
       )}
 
+      {/* Header with Scheduled Reports and Email Deliveries buttons */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex-1"></div>
+        <div className="flex items-center gap-2">
+          {(user?.role === 'Admin' || user?.role === 'Manager' || user?.role === 'Supervisor') && (
+            <>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setShowScheduledReportsSidebar(true)}
+              >
+                <Calendar className="w-4 h-4 mr-2" />
+                Scheduled Reports
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setShowEmailDeliveriesSidebar(true)}
+              >
+                <Mail className="w-4 h-4 mr-2" />
+                Email Deliveries
+              </Button>
+            </>
+          )}
+        </div>
+      </div>
+
       {/* Tabs */}
       <Tabs
         value={reportsTab}
@@ -1063,68 +1094,6 @@ export function ReportsPage() {
             ),
           },
           {
-            id: 'scheduled',
-            label: 'Scheduled Reports',
-            content: (
-              <div className="mt-4">
-                <ScheduledReportsList
-                  onCreateClick={() => {
-                    setEditingSchedule(null);
-                    setShowScheduleModal(true);
-                  }}
-                  onEditClick={(schedule) => {
-                    setEditingSchedule(schedule);
-                    setShowScheduleModal(true);
-                  }}
-                  reportData={{
-                    kpis,
-                    inspectionsChartData,
-                    defectsChartData,
-                    defectsBySeverityData,
-                    tableData,
-                    filteredDefects,
-                    filteredWorkOrders,
-                    filteredInspections,
-                    allPMSchedules,
-                  }}
-                  filters={filters}
-                  siteNames={Object.fromEntries(mockSites.map(s => [s.id, s.name]))}
-                />
-              </div>
-            ),
-          },
-          {
-            id: 'scheduled',
-            label: 'Scheduled Reports',
-            content: (
-              <div className="mt-4">
-                <ScheduledReportsList
-                  onCreateClick={() => {
-                    setEditingSchedule(null);
-                    setShowScheduleModal(true);
-                  }}
-                  onEditClick={(schedule) => {
-                    setEditingSchedule(schedule);
-                    setShowScheduleModal(true);
-                  }}
-                  reportData={{
-                    kpis,
-                    inspectionsChartData,
-                    defectsChartData,
-                    defectsBySeverityData,
-                    tableData,
-                    filteredDefects,
-                    filteredWorkOrders,
-                    filteredInspections,
-                    allPMSchedules,
-                  }}
-                  filters={filters}
-                  siteNames={Object.fromEntries(mockSites.map(s => [s.id, s.name]))}
-                />
-              </div>
-            ),
-          },
-          {
             id: 'saved',
             label: 'Saved Reports',
             content: (
@@ -1548,17 +1517,16 @@ export function ReportsPage() {
         }}
       />
 
-      {/* Schedule Modal */}
-      <ScheduleModal
-        isOpen={showScheduleModal}
-        onClose={() => {
-          setShowScheduleModal(false);
-          setEditingSchedule(null);
-        }}
-        onSuccess={() => {
-          // Refresh will be handled by ScheduledReportsList
-        }}
-        schedule={editingSchedule}
+      {/* Scheduled Reports Sidebar */}
+      <ScheduledReportsSidebar
+        isOpen={showScheduledReportsSidebar}
+        onClose={() => setShowScheduledReportsSidebar(false)}
+      />
+
+      {/* Email Deliveries Sidebar */}
+      <EmailDeliveriesSidebar
+        isOpen={showEmailDeliveriesSidebar}
+        onClose={() => setShowEmailDeliveriesSidebar(false)}
       />
     </div>
   );

@@ -136,25 +136,47 @@ export function SearchableMultiSelect({
               {filteredOptions.length === 0 ? (
                 <div className="p-3 text-sm text-gray-500 text-center">No options found</div>
               ) : (
-                filteredOptions.map((option) => {
-                  const isSelected = selected.includes(option.value);
-                  return (
+                <>
+                  {/* Select All option - only show if there are multiple options and search is empty or matches all */}
+                  {options.length > 1 && (searchTerm === '' || filteredOptions.length === options.length) && (
                     <label
-                      key={option.value}
-                      className={`flex items-center gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer ${
-                        isSelected ? 'bg-blue-50' : ''
-                      }`}
+                      className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer border-b border-gray-200"
                     >
                       <input
                         type="checkbox"
-                        checked={isSelected}
-                        onChange={() => toggleSelection(option.value)}
+                        checked={selected.length === options.length && options.length > 0}
+                        onChange={() => {
+                          if (selected.length === options.length) {
+                            onChange([]);
+                          } else {
+                            onChange(options.map(opt => opt.value));
+                          }
+                        }}
                         className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                       />
-                      <span className="text-sm text-gray-700 flex-1">{option.label}</span>
+                      <span className="text-sm font-medium text-gray-700 flex-1">Select All</span>
                     </label>
-                  );
-                })
+                  )}
+                  {filteredOptions.map((option) => {
+                    const isSelected = selected.includes(option.value);
+                    return (
+                      <label
+                        key={option.value}
+                        className={`flex items-center gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer ${
+                          isSelected ? 'bg-blue-50' : ''
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelection(option.value)}
+                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700 flex-1">{option.label}</span>
+                      </label>
+                    );
+                  })}
+                </>
               )}
             </div>
           </div>

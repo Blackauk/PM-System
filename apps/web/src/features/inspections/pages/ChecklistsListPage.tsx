@@ -6,7 +6,8 @@ import { Input } from '../../../components/common/Input';
 import { Button } from '../../../components/common/Button';
 import { Badge } from '../../../components/common/Badge';
 import { SortableTable } from '../../../components/common/SortableTable';
-import { FloatingFilterPanel, FilterSection } from '../../../components/common/FloatingFilterPanel';
+import { FilterPanel } from '../../../components/common/FilterPanel';
+import { FilterSection } from '../../../components/common/FilterSection';
 import { MultiSelectFilter } from '../../../components/common/MultiSelectFilter';
 import { FilterButton } from '../../../components/common/FilterButton';
 import { getChecklists } from '../services';
@@ -18,7 +19,8 @@ export function ChecklistsListPage() {
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState<{ category?: string[]; isActive?: boolean }>({});
   const filterButtonRef = useRef<HTMLDivElement>(null);
-  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const [tempFilters, setTempFilters] = useState<{ category?: string[]; isActive?: boolean }>({});
 
   const checklists = getChecklists();
 
@@ -120,7 +122,10 @@ export function ChecklistsListPage() {
             </div>
             <div ref={filterButtonRef}>
               <FilterButton
-                onClick={() => setIsFilterOpen(!isFilterOpen)}
+                onClick={() => {
+                  setTempFilters(filters);
+                  setShowFilterPanel(true);
+                }}
                 activeFilterCount={activeFilterCount}
               />
             </div>
@@ -134,55 +139,6 @@ export function ChecklistsListPage() {
         </div>
       </Card>
 
-      <FloatingFilterPanel
-        isOpen={isFilterOpen}
-        onClose={() => setIsFilterOpen(false)}
-        anchorRef={filterButtonRef}
-      >
-        <FilterSection title="Category">
-          <MultiSelectFilter
-            options={categories}
-            selected={filters.category || []}
-            onChange={(selected) => setFilters((prev) => ({ ...prev, category: selected.length > 0 ? selected : undefined }))}
-          />
-        </FilterSection>
-
-        <FilterSection title="Status">
-          <div className="space-y-2">
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={filters.isActive === true}
-                onChange={(e) => setFilters((prev) => ({ ...prev, isActive: e.target.checked ? true : undefined }))}
-                className="rounded"
-              />
-              <span className="text-sm">Active</span>
-            </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={filters.isActive === false}
-                onChange={(e) => setFilters((prev) => ({ ...prev, isActive: e.target.checked ? false : undefined }))}
-                className="rounded"
-              />
-              <span className="text-sm">Archived</span>
-            </label>
-          </div>
-        </FilterSection>
-
-        <div className="pt-4 border-t">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setFilters({});
-              setSearch('');
-            }}
-          >
-            Clear All
-          </Button>
-        </div>
-      </FloatingFilterPanel>
     </div>
   );
 }

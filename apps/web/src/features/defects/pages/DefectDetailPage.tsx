@@ -1,90 +1,220 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useDefects } from '../context/DefectsContext';
+import { getDefectByCode, getAllDefectsFromAPI } from '../api';
 import { Card } from '../../../components/common/Card';
 import { Badge } from '../../../components/common/Badge';
 import { Button } from '../../../components/common/Button';
-import { Tabs } from '../../../components/common/Tabs';
-import { Table, TableHeader, TableRow, TableHeaderCell, TableCell } from '../../../components/common/Table';
-import { Input } from '../../../components/common/Input';
+import { Select } from '../../../components/common/Select';
 import { SeverityBadge } from '../components/SeverityBadge';
 import { StatusBadge } from '../components/StatusBadge';
+import { DropdownMenu } from '../../../components/common/DropdownMenu';
+import {
+  ArrowLeft,
+  Edit,
+  MoreVertical,
+  Trash2,
+  Copy,
+  FileText,
+  Camera,
+  Upload,
+  Clock,
+  User,
+  Calendar,
+  MapPin,
+  AlertTriangle,
+  ExternalLink,
+} from 'lucide-react';
 import {
   canEditDefect,
   canCloseDefect,
   canReopenDefect,
   validateCloseDefect,
 } from '../lib/permissions';
+import { showToast } from '../../../components/common/Toast';
+import type { DropdownMenuItem } from '../../../components/common/DropdownMenu';
+import type { Defect } from '../types';
 
 export function DefectDetailPage() {
-  const { id } = useParams<{ id: string }>();
+  const { defectCode } = useParams<{ defectCode: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
   const {
-    currentDefect,
-    loading,
-    loadDefect,
     updateDefectData,
     closeDefect,
     reopenDefect,
     addDefectComment,
+    deleteDefectData,
   } = useDefects();
 
+  // Local state for defect data (independent from context)
+  const [loading, setLoading] = useState(true);
+  const [defect, setDefect] = useState<Defect | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [debugInfo, setDebugInfo] = useState<{ param: string; totalDefects: number; sampleCodes: string[] } | null>(null);
+
+  // UI state
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [showCloseModal, setShowCloseModal] = useState(false);
   const [resolutionNotes, setResolutionNotes] = useState('');
-  const [showCloseForm, setShowCloseForm] = useState(false);
   const [newComment, setNewComment] = useState('');
+  const moreMenuRef = useRef<HTMLButtonElement>(null);
 
+  // Fetch defect on mount and when defectCode changes
   useEffect(() => {
-    if (id) {
-      loadDefect(id);
-    }
-  }, [id, loadDefect]);
+    let alive = true;
 
+    async function fetchDefect() {
+      if (!defectCode) {
+        if (import.meta.env.DEV) {
+          console.warn('[DefectDetail] defectCode param is undefined');
+        }
+        setLoading(false);
+        return;
+      }
+
+      console.log('[DefectDetail] defectCode param:', defectCode);
+      setLoading(true);
+      setError(null);
+      setDefect(null);
+
+      try {
+        // Load all defects for debug info
+        const allDefects = await getAllDefectsFromAPI();
+        
+        // Debug info (DEV only)
+        if (import.meta.env.DEV && alive) {
+          const sampleCodes = allDefects.slice(0, 3).map(d => d.defectCode);
+          setDebugInfo({
+            param: defectCode,
+            totalDefects: allDefects.length,
+            sampleCodes,
+          });
+          console.log('[DefectDetail] Total defects:', allDefects.length);
+          console.log('[DefectDetail] Sample codes:', sampleCodes);
+        }
+
+        // Find defect by code
+        const loadedDefect = await getDefectByCode(defectCode);
+        console.log('[DefectDetail] loaded defect:', loadedDefect);
+
+        if (!alive) return;
+
+        setDefect(loadedDefect);
+      } catch (err: any) {
+        if (!alive) return;
+        setError(err.message ?? 'Failed to load defect');
+      } finally {
+        if (alive) {
+          setLoading(false);
+        }
+      }
+    }
+
+    fetchDefect();
+
+    return () => {
+      alive = false;
+    };
+  }, [defectCode]);
+
+  // Refresh defect data (used after mutations)
+  const refreshDefect = async () => {
+    if (!defectCode) return;
+
+    try {
+      const loadedDefect = await getDefectByCode(defectCode);
+      setDefect(loadedDefect);
+      setError(null);
+    } catch (err: any) {
+      setError(err.message ?? 'Failed to refresh defect');
+    }
+  };
+
+  // Show skeleton while loading (NEVER "not found" during loading)
   if (loading) {
     return (
       <div className="p-6">
         <Card>
-          <div className="p-8 text-center text-gray-500">Loading defect...</div>
+          <div className="p-8 space-y-4">
+            <div className="animate-pulse">
+              <div className="h-8 bg-gray-200 rounded w-1/3 mb-4"></div>
+              <div className="h-4 bg-gray-200 rounded w-1/2 mb-2"></div>
+              <div className="h-4 bg-gray-200 rounded w-2/3"></div>
+            </div>
+          </div>
         </Card>
       </div>
     );
   }
 
-  if (!currentDefect) {
+  // Show error state with retry
+  if (error) {
     return (
       <div className="p-6">
         <Card>
-          <div className="p-8 text-center text-gray-500">Defect not found</div>
+          <div className="p-8 text-center space-y-4">
+            <div className="text-red-600 mb-4">{error}</div>
+            <div className="flex gap-2 justify-center">
+              <Button variant="primary" onClick={refreshDefect}>
+                Retry
+              </Button>
+              <Button variant="outline" onClick={() => navigate('/defects')}>
+                Back to Defects List
+              </Button>
+            </div>
+          </div>
         </Card>
       </div>
     );
   }
 
-  const defect = currentDefect;
+  // Show "not found" only after fetch completes and defect is null
+  if (!defect) {
+    return (
+      <div className="p-6">
+        <Card>
+          <div className="p-8 text-center space-y-4">
+            <div className="text-gray-500">Defect not found</div>
+            <Button variant="outline" onClick={() => navigate('/defects')}>
+              Back to Defects List
+            </Button>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
   const canEdit = canEditDefect(user?.role);
   const canClose = canCloseDefect(user?.role);
   const canReopen = canReopenDefect(user?.role);
 
+  const isOverdue =
+    defect.targetRectificationDate &&
+    new Date(defect.targetRectificationDate) < new Date() &&
+    defect.status !== 'Closed';
+
   const handleClose = async () => {
     if (!resolutionNotes.trim()) {
-      alert('Resolution notes are required to close a defect.');
+      showToast('Resolution notes are required to close a defect.', 'error');
       return;
     }
 
     const validation = validateCloseDefect(defect);
     if (!validation.valid) {
-      alert(validation.errors.join('\n'));
+      showToast(validation.errors.join('\n'), 'error');
       return;
     }
 
     try {
       await closeDefect(defect.id, resolutionNotes, user!.id, `${user!.firstName} ${user!.lastName}`);
-      setShowCloseForm(false);
+      setShowCloseModal(false);
       setResolutionNotes('');
-      await loadDefect(defect.id);
+      await refreshDefect();
+      showToast('Defect closed successfully', 'success');
     } catch (error: any) {
-      alert(`Error closing defect: ${error.message}`);
+      showToast(`Error closing defect: ${error.message}`, 'error');
     }
   };
 
@@ -95,9 +225,29 @@ export function DefectDetailPage() {
 
     try {
       await reopenDefect(defect.id, user!.id, `${user!.firstName} ${user!.lastName}`);
-      await loadDefect(defect.id);
+      await refreshDefect();
+      showToast('Defect reopened successfully', 'success');
     } catch (error: any) {
-      alert(`Error reopening defect: ${error.message}`);
+      showToast(`Error reopening defect: ${error.message}`, 'error');
+    }
+  };
+
+  const handleStatusChange = async (newStatus: string) => {
+    if (!canEdit) {
+      showToast('You do not have permission to change defect status', 'error');
+      return;
+    }
+
+    try {
+      await updateDefectData(defect.id, {
+        status: newStatus as any,
+        updatedBy: user!.id,
+        updatedByName: `${user!.firstName} ${user!.lastName}`,
+      });
+      await refreshDefect();
+      showToast('Status updated successfully', 'success');
+    } catch (error: any) {
+      showToast(`Error updating status: ${error.message}`, 'error');
     }
   };
 
@@ -114,212 +264,388 @@ export function DefectDetailPage() {
         text: newComment,
       });
       setNewComment('');
-      await loadDefect(defect.id);
+      await refreshDefect();
+      showToast('Comment added successfully', 'success');
     } catch (error: any) {
-      alert(`Error adding comment: ${error.message}`);
+      showToast(`Error adding comment: ${error.message}`, 'error');
     }
   };
 
-  const tabs = [
+  const handleDelete = async () => {
+    if (!confirm('Are you sure you want to delete this defect? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      await deleteDefectData(defect.id);
+      showToast('Defect deleted successfully', 'success');
+      navigate('/defects');
+    } catch (error: any) {
+      showToast(`Error deleting defect: ${error.message}`, 'error');
+    }
+  };
+
+  const handleDuplicate = () => {
+    // Navigate to create form with pre-filled data
+    navigate('/defects/new', {
+      state: {
+        duplicateFrom: defect.id,
+      },
+    });
+  };
+
+  const moreMenuItems: DropdownMenuItem[] = [
     {
-      id: 'overview',
-      label: 'Overview',
-      content: (
+      label: 'Duplicate',
+      icon: Copy,
+      onClick: handleDuplicate,
+    },
+    {
+      label: 'Export PDF',
+      icon: FileText,
+      onClick: () => {
+        showToast('PDF export feature coming soon', 'info');
+      },
+    },
+  ];
+
+  if (canEdit) {
+    moreMenuItems.push({
+      label: 'Delete',
+      icon: Trash2,
+      onClick: handleDelete,
+    });
+  }
+
+  return (
+    <div className="p-6 space-y-6">
+      {/* Debug Panel (DEV only) */}
+      {import.meta.env.DEV && debugInfo && (
         <Card>
-          <div className="p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Defect Details</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Defect Code</label>
-                <div className="font-mono font-medium text-gray-900">{defect.defectCode}</div>
+          <div className="p-4 bg-blue-50 border border-blue-200 rounded">
+            <h3 className="text-sm font-semibold text-blue-900 mb-2">🔍 Debug Info</h3>
+            <div className="text-xs text-blue-800 space-y-1 font-mono">
+              <div>Param defectCode: <span className="font-bold">{debugInfo.param}</span></div>
+              <div>Total defects loaded: {debugInfo.totalDefects}</div>
+              <div>First 3 codes: {debugInfo.sampleCodes.join(', ')}</div>
+              <div className="mt-2 text-blue-600">
+                {defect ? `✅ Resolved to: ${defect.defectCode}` : '❌ Not found'}
               </div>
+            </div>
+          </div>
+        </Card>
+      )}
 
+      {/* Header */}
+      <div className="flex items-start justify-between">
+        <div className="flex items-center gap-4 flex-1">
+          <Button variant="outline" onClick={() => navigate('/defects')} size="sm">
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to Defects
+          </Button>
+          <div className="flex-1">
+            <h1 className="text-2xl font-bold text-gray-900">
+              {defect.defectCode} — {defect.title}
+            </h1>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {canEdit && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate(`/defects/${defect.defectCode}/edit`)}
+            >
+              <Edit className="w-4 h-4 mr-2" />
+              Edit
+            </Button>
+          )}
+          {defect.status === 'Closed' && canReopen && (
+            <Button variant="primary" size="sm" onClick={handleReopen}>
+              Reopen
+            </Button>
+          )}
+          {defect.status !== 'Closed' && canClose && (
+            <Button variant="primary" size="sm" onClick={() => setShowCloseModal(true)}>
+              Close Defect
+            </Button>
+          )}
+          {defect.status !== 'Closed' && canEdit && (
+            <Select
+              value={defect.status}
+              onChange={(e) => handleStatusChange(e.target.value)}
+              className="min-w-[140px]"
+              options={[
+                { value: 'Open', label: 'Open' },
+                { value: 'Acknowledged', label: 'Acknowledged' },
+                { value: 'InProgress', label: 'In Progress' },
+                { value: 'Deferred', label: 'Deferred' },
+              ]}
+            />
+          )}
+          <div className="relative">
+            <button
+              ref={moreMenuRef as any}
+              className="px-3 py-1.5 text-sm font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 border-2 border-gray-300 text-gray-700 hover:bg-gray-50 focus:ring-gray-500 flex items-center justify-center"
+              onClick={() => setShowMoreMenu(!showMoreMenu)}
+            >
+              <MoreVertical className="w-4 h-4" />
+            </button>
+            <DropdownMenu
+              isOpen={showMoreMenu}
+              onClose={() => setShowMoreMenu(false)}
+              anchorRef={moreMenuRef as any}
+              items={moreMenuItems}
+              width="w-48"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Summary Chips */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <StatusBadge status={defect.status} />
+        <SeverityBadge severity={defect.severity} severityModel={defect.severityModel} />
+        {defect.unsafeDoNotUse && (
+          <Badge variant="error" className="bg-red-600 text-white">
+            <AlertTriangle className="w-4 h-4 mr-1 inline" />
+            UNSAFE - DO NOT USE
+          </Badge>
+        )}
+        {isOverdue && (
+          <Badge variant="error">Overdue</Badge>
+        )}
+      </div>
+
+      {/* Unsafe Banner */}
+      {defect.unsafeDoNotUse && (
+        <div className="bg-red-50 border-l-4 border-red-600 p-4 rounded-r-lg">
+          <div className="flex items-start">
+            <AlertTriangle className="w-5 h-5 text-red-600 mt-0.5 mr-3 flex-shrink-0" />
+            <div>
+              <h3 className="font-semibold text-red-900 mb-1">DO NOT USE - UNSAFE DEFECT</h3>
+              <p className="text-sm text-red-700">
+                This defect has been marked as unsafe. Do not use the associated asset until this defect is resolved.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Details Card - 2 Column Grid */}
+      <Card>
+        <div className="p-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Left Column */}
+            <div className="space-y-6">
+              {/* Description */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                <StatusBadge status={defect.status} />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Severity Model</label>
-                <div className="text-gray-900">{defect.severityModel}</div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Severity</label>
-                <SeverityBadge severity={defect.severity} severityModel={defect.severityModel} />
-              </div>
-
-              {defect.unsafeDoNotUse && (
-                <div className="md:col-span-2">
-                  <Badge variant="error">⚠️ UNSAFE - DO NOT USE</Badge>
+                <h3 className="text-sm font-semibold text-gray-900 mb-2">Description</h3>
+                <div className="text-gray-700 bg-white border border-gray-200 rounded-lg p-4 whitespace-pre-wrap">
+                  {defect.description || 'No description provided'}
                 </div>
-              )}
-
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
-                <div className="font-medium text-gray-900">{defect.title}</div>
               </div>
 
-              {defect.description && (
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                  <div className="text-gray-900 whitespace-pre-wrap">{defect.description}</div>
-                </div>
-              )}
-
-              {defect.assetId && (
+              {/* Location */}
+              {(defect.siteName || defect.locationId) && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Asset</label>
-                  <button
-                    onClick={() => navigate(`/assets/${defect.assetId}`)}
-                    className="text-blue-600 hover:text-blue-700 hover:underline font-mono"
-                  >
-                    {defect.assetId}
-                  </button>
-                </div>
-              )}
-
-              {defect.siteName && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Site</label>
-                  <div className="text-gray-900">{defect.siteName}</div>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Assigned To</label>
-                <div className="text-gray-900">{defect.assignedToName || 'Unassigned'}</div>
-              </div>
-
-              {defect.targetRectificationDate && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Target Rectification Date</label>
-                  <div className={`text-gray-900 ${
-                    new Date(defect.targetRectificationDate) < new Date() && defect.status !== 'Closed'
-                      ? 'text-red-600 font-medium'
-                      : ''
-                  }`}>
-                    {new Date(defect.targetRectificationDate).toLocaleDateString()}
+                  <h3 className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                    <MapPin className="w-4 h-4" />
+                    Location
+                  </h3>
+                  <div className="text-gray-700">
+                    {defect.siteName && <div>{defect.siteName}</div>}
+                    {defect.locationId && (
+                      <div className="text-sm text-gray-600">{defect.locationId}</div>
+                    )}
                   </div>
                 </div>
               )}
 
-              {/* Origin Panel - if created from PM Task */}
-              {defect.inspectionId && defect.inspectionId.startsWith('pm-schedule-') && (
-                <div className="md:col-span-2 mt-4 pt-4 border-t">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Origin</label>
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                    <div className="text-sm text-gray-700">
-                      <div className="font-medium mb-1">Created from PM Schedule</div>
-                      <button
-                        onClick={() => {
-                          const scheduleId = defect.inspectionId?.replace('pm-schedule-', '');
-                          if (scheduleId) navigate(`/pm-schedules/${scheduleId}`);
-                        }}
-                        className="text-blue-600 hover:text-blue-700 hover:underline"
-                      >
-                        View PM Schedule
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {defect.complianceTags.length > 0 && (
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Compliance Tags</label>
-                  <div className="flex flex-wrap gap-2">
-                    {defect.complianceTags.map((tag) => (
-                      <Badge key={tag} variant="info">{tag}</Badge>
+              {/* Notes / Comments */}
+              {defect.comments.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900 mb-2">Notes</h3>
+                  <div className="space-y-2">
+                    {defect.comments.slice(0, 3).map((comment) => (
+                      <div key={comment.id} className="text-sm text-gray-700 bg-gray-50 p-3 rounded border border-gray-200">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-medium">{comment.byName}</span>
+                          <span className="text-xs text-gray-500">
+                            {new Date(comment.at).toLocaleDateString()}
+                          </span>
+                        </div>
+                        <div className="whitespace-pre-wrap">{comment.text}</div>
+                      </div>
                     ))}
                   </div>
                 </div>
               )}
+            </div>
 
+            {/* Right Column */}
+            <div className="space-y-6">
+              {/* Asset */}
+              {defect.assetId && (
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900 mb-2">Asset</h3>
+                  <button
+                    onClick={() => navigate(`/assets/${defect.assetId}`)}
+                    className="text-blue-600 hover:text-blue-700 hover:underline font-mono text-lg font-medium flex items-center gap-2"
+                  >
+                    {defect.assetId}
+                    <ExternalLink className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+
+              {/* Assigned To */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Created By</label>
-                <div className="text-gray-900">{defect.createdByName}</div>
-                <div className="text-xs text-gray-500">{new Date(defect.createdAt).toLocaleString()}</div>
+                <h3 className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                  <User className="w-4 h-4" />
+                  Assigned To
+                </h3>
+                <div className="text-gray-700">{defect.assignedToName || 'Unassigned'}</div>
               </div>
 
-              {defect.reopenedCount > 0 && (
+              {/* Created Date */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                  <Calendar className="w-4 h-4" />
+                  Created
+                </h3>
+                <div className="text-gray-700">
+                  <div>{new Date(defect.createdAt).toLocaleDateString()}</div>
+                  <div className="text-sm text-gray-600">by {defect.createdByName}</div>
+                </div>
+              </div>
+
+              {/* Target Date */}
+              {defect.targetRectificationDate && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Reopened</label>
-                  <div className="text-gray-900">{defect.reopenedCount} time(s)</div>
+                  <h3 className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                    <Clock className="w-4 h-4" />
+                    Target Rectification Date
+                  </h3>
+                  <div className={`font-medium ${isOverdue ? 'text-red-600' : 'text-gray-700'}`}>
+                    {new Date(defect.targetRectificationDate).toLocaleDateString()}
+                    {isOverdue && <span className="ml-2 text-red-600">(Overdue)</span>}
+                  </div>
+                </div>
+              )}
+
+              {/* Compliance Tags */}
+              {defect.complianceTags.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900 mb-2">Compliance Tags</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {defect.complianceTags.map((tag) => (
+                      <Badge key={tag} variant="info">
+                        {tag}
+                      </Badge>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
           </div>
-        </Card>
-      ),
-    },
-    {
-      id: 'actions',
-      label: 'Actions',
-      content: (
-        <Card>
-          <div className="p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Actions</h3>
-            {defect.actions.length > 0 ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHeaderCell>Action</TableHeaderCell>
-                    <TableHeaderCell>Required</TableHeaderCell>
-                    <TableHeaderCell>Status</TableHeaderCell>
-                    <TableHeaderCell>Completed</TableHeaderCell>
-                  </TableRow>
-                </TableHeader>
-                <tbody>
-                  {defect.actions.map((action) => (
-                    <TableRow key={action.id}>
-                      <TableCell>{action.title}</TableCell>
-                      <TableCell>
-                        {action.required ? (
-                          <Badge variant="error" size="sm">Required</Badge>
-                        ) : (
-                          <span className="text-gray-400">Optional</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {action.completed ? (
-                          <Badge variant="success" size="sm">Completed</Badge>
-                        ) : (
-                          <Badge variant="default" size="sm">Pending</Badge>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {action.completedAt ? (
-                          <div className="text-sm">
-                            <div>{new Date(action.completedAt).toLocaleDateString()}</div>
-                            {action.completedByName && (
-                              <div className="text-xs text-gray-500">by {action.completedByName}</div>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-gray-400">—</span>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </tbody>
-              </Table>
-            ) : (
-              <div className="text-center py-8 text-gray-500">No actions defined</div>
+        </div>
+      </Card>
+
+      {/* Evidence / Attachments */}
+      <Card>
+        <div className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">Photos & Evidence</h3>
+            {canEdit && defect.status !== 'Closed' && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => showToast('Photo upload feature coming soon', 'info')}
+              >
+                <Upload className="w-4 h-4 mr-2" />
+                Add Photo
+              </Button>
             )}
           </div>
-        </Card>
-      ),
-    },
-    {
-      id: 'comments',
-      label: 'Comments',
-      content: (
-        <Card>
-          <div className="p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Comments</h3>
-            
-            {/* Add Comment */}
+          {defect.attachments && defect.attachments.length > 0 ? (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {defect.attachments.map((attachment) => (
+                <div key={attachment.id} className="relative group">
+                  {attachment.type === 'photo' ? (
+                    <div className="relative">
+                      <img
+                        src={attachment.uri}
+                        alt={attachment.filename}
+                        className="w-full h-32 object-cover rounded-lg border border-gray-200 cursor-pointer hover:opacity-90"
+                        onClick={() => window.open(attachment.uri, '_blank')}
+                      />
+                      {attachment.label && (
+                        <Badge
+                          variant={attachment.label === 'before' ? 'info' : attachment.label === 'after' ? 'success' : 'default'}
+                          className="absolute top-2 left-2"
+                          size="sm"
+                        >
+                          {attachment.label}
+                        </Badge>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="w-full h-32 border border-gray-200 rounded-lg flex items-center justify-center bg-gray-50">
+                      <FileText className="w-8 h-8 text-gray-400" />
+                    </div>
+                  )}
+                  <div className="mt-2">
+                    <div className="text-xs text-gray-600 truncate">{attachment.filename}</div>
+                    <div className="text-xs text-gray-400">
+                      {new Date(attachment.createdAt).toLocaleDateString()}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-12 text-gray-500">
+              <Camera className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+              <p>No photos or evidence uploaded yet</p>
+            </div>
+          )}
+        </div>
+      </Card>
+
+      {/* Activity Timeline */}
+      <Card>
+        <div className="p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Activity Timeline</h3>
+          <div className="space-y-4">
+            {defect.history.map((entry) => (
+              <div key={entry.id} className="border-l-4 border-gray-300 pl-4 py-2">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-gray-900">{entry.byName}</span>
+                    <Badge variant="info" size="sm">
+                      {entry.type}
+                    </Badge>
+                  </div>
+                  <span className="text-xs text-gray-500">
+                    {new Date(entry.at).toLocaleString()}
+                  </span>
+                </div>
+                <div className="text-sm text-gray-700">{entry.summary}</div>
+              </div>
+            ))}
+            {defect.history.length === 0 && (
+              <div className="text-center py-8 text-gray-500">No activity log entries</div>
+            )}
+          </div>
+        </div>
+      </Card>
+
+      {/* Comments Section */}
+      <Card>
+        <div className="p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Comments</h3>
+          {canEdit && (
             <div className="mb-6 p-4 bg-gray-50 rounded-lg">
               <label className="block text-sm font-medium text-gray-700 mb-2">Add Comment</label>
               <textarea
@@ -329,122 +655,53 @@ export function DefectDetailPage() {
                 onChange={(e) => setNewComment(e.target.value)}
                 placeholder="Enter your comment..."
               />
-              <Button onClick={handleAddComment} className="mt-2" size="sm">
+              <Button onClick={handleAddComment} className="mt-2" size="sm" disabled={!newComment.trim()}>
                 Add Comment
               </Button>
             </div>
-
-            {/* Comments List */}
-            <div className="space-y-4">
-              {defect.comments.map((comment) => (
-                <div key={comment.id} className="border-l-4 border-blue-500 pl-4 py-2">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-medium text-gray-900">{comment.byName}</span>
-                    <span className="text-xs text-gray-500">
-                      {new Date(comment.at).toLocaleString()}
-                    </span>
-                  </div>
-                  <div className="text-sm text-gray-700 whitespace-pre-wrap">{comment.text}</div>
+          )}
+          <div className="space-y-4">
+            {defect.comments.map((comment) => (
+              <div key={comment.id} className="border-l-4 border-blue-500 pl-4 py-2">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-medium text-gray-900">{comment.byName}</span>
+                  <span className="text-xs text-gray-500">
+                    {new Date(comment.at).toLocaleString()}
+                  </span>
                 </div>
-              ))}
-              {defect.comments.length === 0 && (
-                <div className="text-center py-8 text-gray-500">No comments yet</div>
-              )}
-            </div>
+                <div className="text-sm text-gray-700 whitespace-pre-wrap">{comment.text}</div>
+              </div>
+            ))}
+            {defect.comments.length === 0 && (
+              <div className="text-center py-8 text-gray-500">No comments yet</div>
+            )}
           </div>
-        </Card>
-      ),
-    },
-    {
-      id: 'history',
-      label: 'Activity Log',
-      content: (
+        </div>
+      </Card>
+
+      {/* Related Work Order */}
+      {defect.workOrderId && (
         <Card>
           <div className="p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Activity Log</h3>
-            <div className="space-y-4">
-              {defect.history.map((entry) => (
-                <div key={entry.id} className="border-l-4 border-gray-300 pl-4 py-2">
-                  <div className="flex items-center justify-between mb-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-gray-900">{entry.byName}</span>
-                      <Badge variant="info" size="sm">{entry.type}</Badge>
-                    </div>
-                    <span className="text-xs text-gray-500">
-                      {new Date(entry.at).toLocaleString()}
-                    </span>
-                  </div>
-                  <div className="text-sm text-gray-700">{entry.summary}</div>
-                </div>
-              ))}
-              {defect.history.length === 0 && (
-                <div className="text-center py-8 text-gray-500">No activity log entries</div>
-              )}
-            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Related Work Order</h3>
+            <button
+              onClick={() => navigate(`/work-orders/${defect.workOrderId}`)}
+              className="text-blue-600 hover:text-blue-700 hover:underline font-mono flex items-center gap-2"
+            >
+              {defect.workOrderId}
+              <ExternalLink className="w-4 h-4" />
+            </button>
           </div>
         </Card>
-      ),
-    },
-  ];
+      )}
 
-  return (
-    <div className="pb-6">
-      {/* Sticky Header */}
-      <div className="sticky top-0 z-10 bg-white border-b border-gray-200 shadow-sm">
-        <div className="p-6">
-          <div className="flex items-start justify-between mb-4">
-            <div className="flex-1">
-              <div className="flex items-center gap-3 mb-2">
-                <span className="text-2xl font-bold font-mono text-gray-900">{defect.defectCode}</span>
-                <StatusBadge status={defect.status} />
-                <SeverityBadge severity={defect.severity} severityModel={defect.severityModel} />
-                {defect.unsafeDoNotUse && (
-                  <Badge variant="error">⚠️ UNSAFE - DO NOT USE</Badge>
-                )}
-              </div>
-              <div className="text-lg text-gray-700 mb-1">{defect.title}</div>
-              <div className="flex items-center gap-4 text-sm text-gray-600">
-                {defect.assetId && (
-                  <div>
-                    Asset:{' '}
-                    <button
-                      onClick={() => navigate(`/assets/${defect.assetId}`)}
-                      className="text-blue-600 hover:text-blue-700 hover:underline font-mono"
-                    >
-                      {defect.assetId}
-                    </button>
-                  </div>
-                )}
-                {defect.siteName && <div>Site: {defect.siteName}</div>}
-              </div>
-              <div className="text-sm text-gray-600 mt-2">
-                Created by: {defect.createdByName} • {new Date(defect.createdAt).toLocaleDateString()}
-              </div>
-            </div>
-          </div>
-
-          {/* Actions */}
-          <div className="flex flex-wrap gap-2">
-            {defect.status === 'Closed' && canReopen && (
-              <Button size="sm" variant="primary" onClick={handleReopen}>
-                Reopen Defect
-              </Button>
-            )}
-            {defect.status !== 'Closed' && canClose && (
-              <Button
-                size="sm"
-                variant="primary"
-                onClick={() => setShowCloseForm(!showCloseForm)}
-              >
-                Close Defect
-              </Button>
-            )}
-          </div>
-
-          {/* Close Form */}
-          {showCloseForm && (
-            <Card className="mt-4">
-              <div className="p-4 space-y-4">
+      {/* Close Modal */}
+      {showCloseModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-2xl mx-4">
+            <div className="p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Close Defect</h3>
+              <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Resolution Notes <span className="text-red-600">*</span>
@@ -463,27 +720,22 @@ export function DefectDetailPage() {
                     </p>
                   )}
                 </div>
-                <div className="flex gap-2">
-                  <Button onClick={handleClose} disabled={!resolutionNotes.trim()}>
-                    Close Defect
-                  </Button>
+                <div className="flex gap-2 justify-end">
                   <Button variant="outline" onClick={() => {
-                    setShowCloseForm(false);
+                    setShowCloseModal(false);
                     setResolutionNotes('');
                   }}>
                     Cancel
                   </Button>
+                  <Button onClick={handleClose} disabled={!resolutionNotes.trim()}>
+                    Close Defect
+                  </Button>
                 </div>
               </div>
-            </Card>
-          )}
+            </div>
+          </Card>
         </div>
-      </div>
-
-      {/* Tabs Content */}
-      <div className="p-6">
-        <Tabs tabs={tabs} defaultTab="overview" />
-      </div>
+      )}
     </div>
   );
 }

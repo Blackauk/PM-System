@@ -18,6 +18,9 @@ export function downloadExcelTemplate() {
       'SafetyCritical',
       'PhotoOnFail',
       'FailRequiresComment',
+      'HelpText',
+      'PhotoRequired',
+      'SignatureRequired',
       'Unit',
       'Min',
       'Max',
@@ -35,6 +38,9 @@ export function downloadExcelTemplate() {
     { wch: 15 }, // SafetyCritical
     { wch: 12 }, // PhotoOnFail
     { wch: 18 }, // FailRequiresComment
+    { wch: 25 }, // HelpText
+    { wch: 15 }, // PhotoRequired
+    { wch: 18 }, // SignatureRequired
     { wch: 10 }, // Unit
     { wch: 8 },  // Min
     { wch: 8 },  // Max

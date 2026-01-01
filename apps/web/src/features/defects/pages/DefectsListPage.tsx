@@ -10,7 +10,7 @@ import { Button } from '../../../components/common/Button';
 import { Badge } from '../../../components/common/Badge';
 import { SortableTable } from '../../../components/common/SortableTable';
 import { ListPageTable } from '../../../components/common/ListPageTable';
-import { FloatingFilterPanel, FilterSection } from '../../../components/common/FloatingFilterPanel';
+import { FilterSection } from '../../../components/common/FilterSection';
 import { MultiSelectFilter } from '../../../components/common/MultiSelectFilter';
 import { FilterButton } from '../../../components/common/FilterButton';
 import { SeverityBadge } from '../components/SeverityBadge';
@@ -118,7 +118,6 @@ export function DefectsListPage() {
     return saved || null;
   });
   const filterButtonRef = useRef<HTMLDivElement>(null);
-  const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [tempFilters, setTempFilters] = useState<DefectFilter>(filters);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -649,7 +648,7 @@ export function DefectsListPage() {
             label: 'View',
             icon: Eye,
             onClick: () => {
-              navigate(`/defects/${row.id}`);
+              navigate(`/defects/${row.defectCode}`);
             },
           },
         ];
@@ -679,7 +678,7 @@ export function DefectsListPage() {
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  navigate(`/defects/${row.id}`);
+                  navigate(`/defects/${row.defectCode}`);
                 }}
                 className="flex items-center gap-1 px-2 py-1 text-sm text-blue-600 hover:text-blue-700 hover:underline transition-opacity"
                 title="View defect"
@@ -983,7 +982,10 @@ export function DefectsListPage() {
             filterButtonRef={filterButtonRef}
             columns={columns}
             data={filteredDefects}
-            onRowClick={(row) => navigate(`/defects/${row.id}`)}
+            onRowClick={(row) => {
+              console.log('[DefectsList] Navigating with defectCode:', row.defectCode);
+              navigate(`/defects/${row.defectCode}`);
+            }}
             expandedRowId={expandedRowId}
             renderExpandedRow={(row: Defect) => (
               <div className="text-sm text-gray-600">
@@ -998,115 +1000,6 @@ export function DefectsListPage() {
         )}
       </div>
       
-      {/* Floating Filter Panel (for Sort) */}
-      <FloatingFilterPanel
-        isOpen={isFilterOpen}
-        onClose={() => setIsFilterOpen(false)}
-        anchorRef={filterButtonRef}
-      >
-        <div className="space-y-4">
-          <FilterSection title="Status">
-            <MultiSelectFilter
-              options={[
-                { value: 'Open', label: 'Open' },
-                { value: 'Acknowledged', label: 'Acknowledged' },
-                { value: 'InProgress', label: 'In Progress' },
-                { value: 'Overdue', label: 'Overdue' },
-                { value: 'Deferred', label: 'Deferred' },
-                { value: 'Closed', label: 'Closed' },
-              ]}
-              selected={Array.isArray(filters.status) ? filters.status : filters.status ? [filters.status] : []}
-              onChange={(selected) => handleFilterChange('status', selected.length === 1 ? selected[0] : selected)}
-              placeholder="Select statuses..."
-            />
-          </FilterSection>
-          
-          <FilterSection title="Severity">
-            <MultiSelectFilter
-              options={[
-                { value: 'Low', label: 'Low' },
-                { value: 'Medium', label: 'Medium' },
-                { value: 'High', label: 'High' },
-                { value: 'Critical', label: 'Critical' },
-                { value: 'Minor', label: 'Minor' },
-                { value: 'Major', label: 'Major' },
-              ]}
-              selected={Array.isArray(filters.severity) ? filters.severity : filters.severity ? [filters.severity] : []}
-              onChange={(selected) => handleFilterChange('severity', selected.length === 1 ? selected[0] : selected)}
-              placeholder="Select severities..."
-            />
-          </FilterSection>
-          
-          <FilterSection title="Site">
-            <MultiSelectFilter
-              options={mockSites.map((site) => ({ value: site.id, label: site.name }))}
-              selected={Array.isArray(filters.siteId) ? filters.siteId : filters.siteId ? [filters.siteId] : []}
-              onChange={(selected) => handleFilterChange('siteId', selected.length === 1 ? selected[0] : selected)}
-              placeholder="Select sites..."
-            />
-          </FilterSection>
-          
-          <FilterSection title="Unsafe / Do Not Use">
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={filters.unsafe === true}
-                onChange={(e) => handleFilterChange('unsafe', e.target.checked ? true : undefined)}
-                className="rounded"
-              />
-              <span className="text-sm">Show unsafe defects only</span>
-            </label>
-          </FilterSection>
-          
-          <FilterSection title="Assigned To">
-            <MultiSelectFilter
-              options={[
-                { value: 'user-1', label: 'John Smith' },
-                { value: 'user-2', label: 'Sarah Johnson' },
-                { value: 'user-3', label: 'David Lee' },
-                { value: 'user-4', label: 'Mike Davis' },
-                { value: 'user-5', label: 'Emma Wilson' },
-                { value: 'user-6', label: 'Lisa Anderson' },
-              ]}
-              selected={filters.assignedToId ? [filters.assignedToId] : []}
-              onChange={(selected) => handleFilterChange('assignedToId', selected.length === 1 ? selected[0] : undefined)}
-              placeholder="Select assignee..."
-            />
-          </FilterSection>
-          
-          <FilterSection title="Date Range">
-            <div className="space-y-2">
-              <Input
-                type="date"
-                label="From"
-                value={filters.dateFrom || ''}
-                onChange={(e) => handleFilterChange('dateFrom', e.target.value || undefined)}
-              />
-              <Input
-                type="date"
-                label="To"
-                value={filters.dateTo || ''}
-                onChange={(e) => handleFilterChange('dateTo', e.target.value || undefined)}
-              />
-            </div>
-          </FilterSection>
-          
-          <div className="flex gap-2 pt-2 border-t">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setFilters({});
-                setActiveWildcard(null);
-                localStorage.removeItem('defects-filters');
-                localStorage.removeItem('defects-active-wildcard');
-              }}
-            >
-              Clear All
-            </Button>
-          </div>
-        </div>
-      </FloatingFilterPanel>
     </div>
   );
 }

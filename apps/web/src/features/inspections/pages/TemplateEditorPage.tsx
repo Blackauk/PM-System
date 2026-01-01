@@ -419,14 +419,17 @@ export function TemplateEditorPage() {
                           value={item.type}
                           onChange={(e) => updateItem(item.id, { type: e.target.value as ChecklistItem['type'] })}
                           options={[
+                            { value: 'YesNo', label: 'Yes/No' },
                             { value: 'PassFail', label: 'Pass/Fail' },
                             { value: 'PassFailNA', label: 'Pass/Fail/N/A' },
-                            { value: 'Number', label: 'Number' },
+                            { value: 'Checkbox', label: 'Checkbox' },
+                            { value: 'Numeric', label: 'Numeric' },
                             { value: 'Text', label: 'Text' },
+                            { value: 'Signature', label: 'Signature' },
                           ]}
                           className="w-40"
                         />
-                        {item.type === 'Number' && (
+                        {item.type === 'Numeric' && (
                           <>
                             <Input
                               type="text"

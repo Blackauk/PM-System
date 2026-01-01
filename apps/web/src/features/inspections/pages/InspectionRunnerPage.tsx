@@ -7,15 +7,18 @@ import { Badge } from '../../../components/common/Badge';
 import { CollapsibleCard } from '../../../components/common/CollapsibleCard';
 import { Select } from '../../../components/common/Select';
 import { useAuth } from '../../../contexts/AuthContext';
+import { useOffline } from '../../../contexts/OfflineContext';
 import { useInspections } from '../context/InspectionsContext';
 import { showToast } from '../../../components/common/Toast';
-import { Camera, CheckCircle, XCircle } from 'lucide-react';
+import { Camera, CheckCircle, XCircle, WifiOff } from 'lucide-react';
 import type { ChecklistItemAnswer, ChecklistItemResult } from '../types';
+import { SignatureCapture } from '../components/SignatureCapture';
 
 export function InspectionRunnerPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { isOnline, syncStatus } = useOffline();
   const {
     currentInspection,
     loading,
@@ -29,6 +32,7 @@ export function InspectionRunnerPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [photoFiles, setPhotoFiles] = useState<Record<string, File[]>>({});
   const [photoDataUrls, setPhotoDataUrls] = useState<Record<string, string[]>>({});
+  const [isDraggingPhoto, setIsDraggingPhoto] = useState<Record<string, boolean>>({});
   
   // Signature state
   const [showSignatureStep, setShowSignatureStep] = useState(false);
@@ -200,7 +204,9 @@ export function InspectionRunnerPage() {
     
     if (item.type === 'PassFail' || item.type === 'PassFailNA') {
       return answer.result === 'Pass' || answer.result === 'Fail' || answer.result === 'NA';
-    } else if (item.type === 'Number') {
+    } else if (item.type === 'YesNo') {
+      return answer.booleanValue !== null && answer.booleanValue !== undefined;
+    } else if (item.type === 'Numeric') {
       const hasValue = answer.numericValue !== null && 
                       answer.numericValue !== undefined && 
                       !isNaN(answer.numericValue) &&
@@ -211,6 +217,14 @@ export function InspectionRunnerPage() {
       return answer.textValue !== null && 
              answer.textValue !== undefined && 
              answer.textValue.trim().length > 0;
+    } else if (item.type === 'Date') {
+      return answer.dateValue !== null && 
+             answer.dateValue !== undefined && 
+             answer.dateValue.trim().length > 0;
+    } else if (item.type === 'Time') {
+      return answer.timeValue !== null && 
+             answer.timeValue !== undefined && 
+             answer.timeValue.trim().length > 0;
     } else if (item.type === 'Photo') {
       // Photo is only required if item.required is true
       if (item.required) {
@@ -218,6 +232,8 @@ export function InspectionRunnerPage() {
       }
       // Optional photo items are considered answered even without photos
       return true;
+    } else if (item.type === 'Signature') {
+      return !!(answer.signatureData && answer.signatureName && answer.signatureTimestamp);
     }
     return false;
   };
@@ -277,7 +293,7 @@ export function InspectionRunnerPage() {
   const handleAnswerChange = (
     itemId: string,
     result: ChecklistItemResult,
-    value?: string | number,
+    value?: string | number | boolean,
     unit?: string
   ) => {
     const existingIndex = localAnswers.findIndex((a) => a.checklistItemId === itemId);
@@ -303,9 +319,9 @@ export function InspectionRunnerPage() {
       }
     }
 
-    // Convert string to number for Number type
+    // Convert string to number for Numeric type
     let numericValue: number | undefined = undefined;
-    if (item.type === 'Number' && value !== undefined && value !== null) {
+    if (item.type === 'Numeric' && value !== undefined && value !== null) {
       if (typeof value === 'string') {
         const parsed = parseFloat(value);
         numericValue = isNaN(parsed) ? undefined : parsed;
@@ -318,9 +334,47 @@ export function InspectionRunnerPage() {
       id: existingIndex >= 0 ? localAnswers[existingIndex].id : crypto.randomUUID(),
       checklistItemId: itemId,
       result,
-      ...(item.type === 'Number' && numericValue !== undefined && { numericValue }),
-      ...(item.type === 'Number' && unit && { unit }),
+      ...(item.type === 'Numeric' && numericValue !== undefined && { numericValue }),
+      ...(item.type === 'Numeric' && unit && { unit }),
       ...(item.type === 'Text' && typeof value === 'string' && { textValue: value }),
+      ...(item.type === 'YesNo' && typeof value === 'boolean' && { booleanValue: value }),
+      ...(item.type === 'Date' && typeof value === 'string' && { dateValue: value }),
+      ...(item.type === 'Time' && typeof value === 'string' && { timeValue: value }),
+    };
+
+    if (existingIndex >= 0) {
+      const updated = [...localAnswers];
+      updated[existingIndex] = newAnswer;
+      setLocalAnswers(updated);
+    } else {
+      setLocalAnswers([...localAnswers, newAnswer]);
+    }
+
+    // Clear error for this item
+    if (errors[itemId]) {
+      const newErrors = { ...errors };
+      delete newErrors[itemId];
+      setErrors(newErrors);
+    }
+
+    // Remove from incomplete items if now answered
+    setIncompleteItems((prev) => prev.filter((id) => id !== itemId));
+  };
+
+  const handleSignatureChange = (itemId: string, signatureData: {
+    signatureData: string;
+    signatureName: string;
+    signatureTimestamp: string;
+  }) => {
+    const existingIndex = localAnswers.findIndex((a) => a.checklistItemId === itemId);
+    
+    const newAnswer: ChecklistItemAnswer = {
+      id: existingIndex >= 0 ? localAnswers[existingIndex].id : crypto.randomUUID(),
+      checklistItemId: itemId,
+      result: null,
+      signatureData: signatureData.signatureData,
+      signatureName: signatureData.signatureName,
+      signatureTimestamp: signatureData.signatureTimestamp,
     };
 
     if (existingIndex >= 0) {
@@ -433,7 +487,22 @@ export function InspectionRunnerPage() {
         const answer = localAnswers.find((a) => a.checklistItemId === item.id);
         
         if (!isItemAnswered(item, answer)) {
-          newErrors[item.id] = 'This item is required';
+          // Provide specific error messages for different types
+          if (item.type === 'Signature') {
+            if (!answer?.signatureName || !answer?.signatureData) {
+              newErrors[item.id] = 'Signature is required - please provide your name and signature';
+            } else {
+              newErrors[item.id] = 'Signature is required';
+            }
+          } else if (item.type === 'Photo') {
+            newErrors[item.id] = 'Photo is required';
+          } else if (item.type === 'Date') {
+            newErrors[item.id] = 'Date is required';
+          } else if (item.type === 'Time') {
+            newErrors[item.id] = 'Time is required';
+          } else {
+            newErrors[item.id] = 'This item is required';
+          }
           incomplete.push(item.id);
         }
         
@@ -837,6 +906,20 @@ export function InspectionRunnerPage() {
 
   return (
     <div className="pb-6">
+      {/* Offline Mode Banner */}
+      {!isOnline && (
+        <div className="sticky top-0 z-30 bg-yellow-50 border-b border-yellow-200 shadow-sm">
+          <div className="p-3">
+            <div className="flex items-center gap-2">
+              <WifiOff className="w-4 h-4 text-yellow-600" />
+              <Badge variant="warning" size="sm">Offline Mode</Badge>
+              <span className="text-sm text-gray-700">
+                This inspection will be synced when connection is restored.
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Incomplete Items Banner */}
       {showIncompleteBanner && incompleteItems.length > 0 && (
         <div className="sticky top-0 z-20 bg-yellow-50 border-b border-yellow-200 shadow-sm">
@@ -1096,7 +1179,7 @@ export function InspectionRunnerPage() {
                           </div>
                         )}
                       </div>
-                    ) : item.type === 'Number' ? (
+                    ) : item.type === 'Numeric' ? (
                       <div className="space-y-2">
                         <div className="flex items-center gap-2">
                           <Input
@@ -1120,6 +1203,9 @@ export function InspectionRunnerPage() {
                             <span className="text-sm text-gray-600 whitespace-nowrap">{item.unit}</span>
                           )}
                         </div>
+                        {item.guidanceText && (
+                          <p className="text-xs text-gray-500">{item.guidanceText}</p>
+                        )}
                         {(answer?.result === 'Fail' || answer?.result === 'NA') && (
                           <textarea
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
@@ -1130,9 +1216,63 @@ export function InspectionRunnerPage() {
                           />
                         )}
                       </div>
+                    ) : item.type === 'Signature' ? (
+                      <div className="space-y-2">
+                        <SignatureCapture
+                          value={{
+                            signatureData: answer?.signatureData,
+                            signatureName: answer?.signatureName,
+                            signatureTimestamp: answer?.signatureTimestamp,
+                          }}
+                          onChange={(signatureData) => {
+                            const existingIndex = localAnswers.findIndex((a) => a.checklistItemId === item.id);
+                            const newAnswer: ChecklistItemAnswer = {
+                              id: existingIndex >= 0 ? localAnswers[existingIndex].id : crypto.randomUUID(),
+                              checklistItemId: item.id,
+                              result: null,
+                              signatureData: signatureData.signatureData,
+                              signatureName: signatureData.signatureName,
+                              signatureTimestamp: signatureData.signatureTimestamp,
+                            };
+                            if (existingIndex >= 0) {
+                              const updated = [...localAnswers];
+                              updated[existingIndex] = newAnswer;
+                              setLocalAnswers(updated);
+                            } else {
+                              setLocalAnswers([...localAnswers, newAnswer]);
+                            }
+                          }}
+                          required={item.required}
+                          error={hasError && item.required && !answer?.signatureData ? errors[item.id] : undefined}
+                        />
+                      </div>
                     ) : item.type === 'Photo' ? (
                       <div className="space-y-3">
-                        <div>
+                        <div
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                            setIsDraggingPhoto((prev) => ({ ...prev, [item.id]: true }));
+                          }}
+                          onDragLeave={(e) => {
+                            e.preventDefault();
+                            if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                              setIsDraggingPhoto((prev) => ({ ...prev, [item.id]: false }));
+                            }
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            setIsDraggingPhoto((prev) => ({ ...prev, [item.id]: false }));
+                            const files = e.dataTransfer.files;
+                            if (files.length > 0) {
+                              handlePhotoUpload(item.id, files);
+                            }
+                          }}
+                          className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors ${
+                            isDraggingPhoto[item.id]
+                              ? 'border-blue-500 bg-blue-50'
+                              : 'border-gray-300 hover:border-gray-400'
+                          }`}
+                        >
                           <input
                             type="file"
                             accept="image/*"
@@ -1142,13 +1282,20 @@ export function InspectionRunnerPage() {
                             id={`photo-item-${item.id}`}
                             onChange={(e) => handlePhotoUpload(item.id, e.target.files)}
                           />
+                          <Camera className="w-6 h-6 mx-auto text-gray-400 mb-2" />
+                          <p className="text-sm text-gray-600 mb-2">
+                            {isDraggingPhoto[item.id] ? 'Drop photos here' : 'Drag & drop photos here or'}
+                          </p>
                           <label
                             htmlFor={`photo-item-${item.id}`}
                             className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 bg-white"
                           >
                             <Camera className="w-4 h-4" />
-                            Add Photo
+                            {isDraggingPhoto[item.id] ? 'Drop to Upload' : 'Click to Upload'}
                           </label>
+                          <p className="text-xs text-gray-500 mt-2">
+                            Supports mobile camera capture
+                          </p>
                         </div>
                         {(photoDataUrls[item.id]?.length > 0 || answer?.photoUris?.length > 0) && (
                           <div className="grid grid-cols-3 gap-2">
@@ -1170,6 +1317,101 @@ export function InspectionRunnerPage() {
                             ))}
                           </div>
                         )}
+                        {answer && (
+                          <textarea
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                            rows={2}
+                            placeholder="Add comment (optional)..."
+                            value={answer.comment || ''}
+                            onChange={(e) => handleCommentChange(item.id, e.target.value)}
+                          />
+                        )}
+                      </div>
+                    ) : item.type === 'YesNo' ? (
+                      <div className="space-y-3">
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant={answer?.booleanValue === true ? 'primary' : 'outline'}
+                            onClick={() => handleAnswerChange(item.id, null, true)}
+                          >
+                            Yes
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant={answer?.booleanValue === false ? 'outline' : 'outline'}
+                            onClick={() => handleAnswerChange(item.id, null, false)}
+                            className={answer?.booleanValue === false ? 'bg-red-50 border-red-300 text-red-700' : ''}
+                          >
+                            No
+                          </Button>
+                        </div>
+                        {answer && (
+                          <textarea
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                            rows={2}
+                            placeholder="Add comment (optional)..."
+                            value={answer.comment || ''}
+                            onChange={(e) => handleCommentChange(item.id, e.target.value)}
+                          />
+                        )}
+                      </div>
+                    ) : item.type === 'Date' ? (
+                      <div className="space-y-2">
+                        <Input
+                          type="date"
+                          value={answer?.dateValue || ''}
+                          onChange={(e) =>
+                            handleAnswerChange(item.id, null, e.target.value)
+                          }
+                          placeholder="Select date"
+                          error={hasError ? errors[item.id] : undefined}
+                          className="flex-1"
+                        />
+                        {answer && (
+                          <textarea
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                            rows={2}
+                            placeholder="Add comment (optional)..."
+                            value={answer.comment || ''}
+                            onChange={(e) => handleCommentChange(item.id, e.target.value)}
+                          />
+                        )}
+                      </div>
+                    ) : item.type === 'Time' ? (
+                      <div className="space-y-2">
+                        <Input
+                          type="time"
+                          value={answer?.timeValue || ''}
+                          onChange={(e) =>
+                            handleAnswerChange(item.id, null, e.target.value)
+                          }
+                          placeholder="Select time"
+                          error={hasError ? errors[item.id] : undefined}
+                          className="flex-1"
+                        />
+                        {answer && (
+                          <textarea
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                            rows={2}
+                            placeholder="Add comment (optional)..."
+                            value={answer.comment || ''}
+                            onChange={(e) => handleCommentChange(item.id, e.target.value)}
+                          />
+                        )}
+                      </div>
+                    ) : item.type === 'Signature' ? (
+                      <div className="space-y-2">
+                        <SignatureCapture
+                          value={{
+                            signatureData: answer?.signatureData,
+                            signatureName: answer?.signatureName,
+                            signatureTimestamp: answer?.signatureTimestamp,
+                          }}
+                          onChange={(data) => handleSignatureChange(item.id, data)}
+                          required={item.required}
+                          error={hasError ? errors[item.id] : undefined}
+                        />
                         {answer && (
                           <textarea
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"

@@ -1,15 +1,16 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card } from '../../../components/common/Card';
 import { Button } from '../../../components/common/Button';
 import { Input } from '../../../components/common/Input';
 import { Select } from '../../../components/common/Select';
 import { Badge } from '../../../components/common/Badge';
-import { Modal } from '../../../components/common/Modal';
+import { SlideOver } from '../../../components/common/SlideOver';
 import { SortableTable } from '../../../components/common/SortableTable';
 import { Tabs } from '../../../components/common/Tabs';
+import { DropdownMenu } from '../../../components/common/DropdownMenu';
 import { showToast } from '../../../components/common/Toast';
-import { Plus, Edit, Trash2, Shield } from 'lucide-react';
+import { Plus, Edit, Eye, MoreVertical, X } from 'lucide-react';
 import { 
   loadUsers, 
   saveUsers, 
@@ -20,6 +21,44 @@ import {
   type Role 
 } from '../mock/settingsData';
 import { useAuth } from '../../../contexts/AuthContext';
+import { SearchableMultiSelect } from '../../../components/common/SearchableMultiSelect';
+
+// Permission modules as per requirements
+const PERMISSION_MODULES = [
+  'Defects',
+  'Inspections',
+  'Work Orders',
+  'Assets',
+  'Schedules',
+  'Inventory',
+  'Reports',
+  'Handover',
+  'Settings',
+] as const;
+
+// Permission actions
+const PERMISSION_ACTIONS = ['View', 'Create', 'Edit', 'Delete', 'Approve'] as const;
+
+// Determine which actions are relevant for each module
+function getModuleActions(module: string): string[] {
+  const baseActions = ['View', 'Create', 'Edit', 'Delete'];
+  if (module === 'Inspections' || module === 'Defects' || module === 'Work Orders') {
+    return ['View', 'Create', 'Edit', 'Delete', 'Approve'];
+  }
+  return baseActions;
+}
+
+// Create default permissions structure
+function createDefaultPermissions(): Record<string, Record<string, boolean>> {
+  const perms: Record<string, Record<string, boolean>> = {};
+  PERMISSION_MODULES.forEach(module => {
+    perms[module] = {};
+    getModuleActions(module).forEach(action => {
+      perms[module][action] = false;
+    });
+  });
+  return perms;
+}
 
 export function UsersRolesSection() {
   const navigate = useNavigate();
@@ -27,12 +66,22 @@ export function UsersRolesSection() {
   const [users, setUsers] = useState(loadUsers());
   const [roles, setRoles] = useState(loadRoles());
   const [activeTab, setActiveTab] = useState<'users' | 'roles'>('users');
-  const [showUserModal, setShowUserModal] = useState(false);
-  const [showRoleModal, setShowRoleModal] = useState(false);
-  const [showDisableModal, setShowDisableModal] = useState(false);
+  
+  // User management state
+  const [showUserDrawer, setShowUserDrawer] = useState(false);
+  const [showUserViewDrawer, setShowUserViewDrawer] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const [selectedRole, setSelectedRole] = useState<Role | null>(null);
   const [userForm, setUserForm] = useState<Partial<User>>({});
+  const [userMenuOpenId, setUserMenuOpenId] = useState<string | null>(null);
+  const userMenuRefs = useRef<Record<string, React.RefObject<HTMLButtonElement>>>({});
+  
+  // Role management state
+  const [showRoleDrawer, setShowRoleDrawer] = useState(false);
+  const [showPermissionsDrawer, setShowPermissionsDrawer] = useState(false);
+  const [selectedRole, setSelectedRole] = useState<Role | null>(null);
+  const [roleForm, setRoleForm] = useState<Partial<Role>>({});
+  
+  // Filters
   const [search, setSearch] = useState('');
   const [filterRole, setFilterRole] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<string>('');
@@ -61,6 +110,14 @@ export function UsersRolesSection() {
     return filtered;
   }, [users, search, filterRole, filterStatus]);
 
+  // Get or create ref for user menu
+  const getUserMenuRef = (userId: string) => {
+    if (!userMenuRefs.current[userId]) {
+      userMenuRefs.current[userId] = { current: null };
+    }
+    return userMenuRefs.current[userId];
+  };
+
   const handleAddUser = () => {
     setUserForm({
       firstName: '',
@@ -71,18 +128,50 @@ export function UsersRolesSection() {
       siteIds: [],
     });
     setSelectedUser(null);
-    setShowUserModal(true);
+    setShowUserDrawer(true);
+  };
+
+  const handleViewUser = (user: User) => {
+    setSelectedUser(user);
+    setShowUserViewDrawer(true);
   };
 
   const handleEditUser = (user: User) => {
     setUserForm({ ...user });
     setSelectedUser(user);
-    setShowUserModal(true);
+    setShowUserDrawer(true);
+    setUserMenuOpenId(null);
+  };
+
+  const handleDisableEnableUser = (user: User) => {
+    if (!confirm(`Are you sure you want to ${user.status === 'Active' ? 'disable' : 'enable'} ${user.firstName} ${user.lastName}? ${user.status === 'Active' ? 'User won\'t be able to log in.' : ''}`)) {
+      return;
+    }
+    
+    setUsers(prev => {
+      const updated = prev.map(u =>
+        u.id === user.id
+          ? { ...u, status: u.status === 'Active' ? 'Disabled' : 'Active' }
+          : u
+      );
+      saveUsers(updated);
+      return updated;
+    });
+    
+    showToast(`User ${user.status === 'Active' ? 'disabled' : 'enabled'} successfully`, 'success');
+    setUserMenuOpenId(null);
   };
 
   const handleSaveUser = () => {
     if (!userForm.firstName || !userForm.lastName || !userForm.email) {
       showToast('Please fill in all required fields', 'error');
+      return;
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(userForm.email!)) {
+      showToast('Please enter a valid email address', 'error');
       return;
     }
 
@@ -113,51 +202,112 @@ export function UsersRolesSection() {
       showToast('User created successfully', 'success');
     }
     
-    setShowUserModal(false);
+    setShowUserDrawer(false);
     setUserForm({});
     setSelectedUser(null);
   };
 
-  const handleDisableUser = (user: User) => {
-    setSelectedUser(user);
-    setShowDisableModal(true);
-  };
-
-  const confirmDisableUser = () => {
-    if (!selectedUser) return;
-    
-    setUsers(prev => {
-      const updated = prev.map(u =>
-        u.id === selectedUser.id
-          ? { ...u, status: u.status === 'Active' ? 'Disabled' : 'Active' }
-          : u
-      );
-      saveUsers(updated);
-      return updated;
+  const handleAddRole = () => {
+    setRoleForm({
+      name: '',
+      permissions: createDefaultPermissions(),
     });
-    
-    showToast(`User ${selectedUser.status === 'Active' ? 'disabled' : 'enabled'} successfully`, 'success');
-    setShowDisableModal(false);
-    setSelectedUser(null);
+    setSelectedRole(null);
+    setShowRoleDrawer(true);
   };
 
-  const handleEditRole = (role: Role) => {
+  const handleEditRolePermissions = (role: Role) => {
     setSelectedRole(role);
-    setShowRoleModal(true);
+    setShowPermissionsDrawer(true);
   };
 
   const handleSaveRole = () => {
+    if (!selectedRole && !roleForm.name) {
+      showToast('Please enter a role name', 'error');
+      return;
+    }
+
+    if (selectedRole) {
+      // Update existing role permissions
+      setRoles(prev => {
+        const updated = prev.map(r => r.id === selectedRole.id ? selectedRole : r);
+        saveRoles(updated);
+        return updated;
+      });
+      showToast('Role permissions updated successfully', 'success');
+      setShowPermissionsDrawer(false);
+      setSelectedRole(null);
+    } else {
+      // Create new role
+      const newRole: Role = {
+        id: `role-${Date.now()}`,
+        name: roleForm.name!,
+        permissions: roleForm.permissions || createDefaultPermissions(),
+      };
+      setRoles(prev => {
+        const updated = [...prev, newRole];
+        saveRoles(updated);
+        return updated;
+      });
+      showToast('Role created successfully', 'success');
+      setShowRoleDrawer(false);
+      setRoleForm({});
+    }
+  };
+
+  // Permission management helpers
+  const togglePermission = (module: string, action: string) => {
     if (!selectedRole) return;
     
-    setRoles(prev => {
-      const updated = prev.map(r => r.id === selectedRole.id ? selectedRole : r);
-      saveRoles(updated);
-      return updated;
+    setSelectedRole({
+      ...selectedRole,
+      permissions: {
+        ...selectedRole.permissions,
+        [module]: {
+          ...(selectedRole.permissions[module] || {}),
+          [action]: !(selectedRole.permissions[module]?.[action] || false),
+        },
+      },
+    });
+  };
+
+  const toggleModulePermissions = (module: string) => {
+    if (!selectedRole) return;
+    
+    const actions = getModuleActions(module);
+    const allChecked = actions.every(action => selectedRole.permissions[module]?.[action] || false);
+    
+    setSelectedRole({
+      ...selectedRole,
+      permissions: {
+        ...selectedRole.permissions,
+        [module]: Object.fromEntries(
+          actions.map(action => [action, !allChecked])
+        ),
+      },
+    });
+  };
+
+  const toggleAllPermissions = () => {
+    if (!selectedRole) return;
+    
+    const allChecked = PERMISSION_MODULES.every(module => {
+      const actions = getModuleActions(module);
+      return actions.every(action => selectedRole.permissions[module]?.[action] || false);
     });
     
-    showToast('Role permissions updated successfully', 'success');
-    setShowRoleModal(false);
-    setSelectedRole(null);
+    const newPerms: Record<string, Record<string, boolean>> = {};
+    PERMISSION_MODULES.forEach(module => {
+      const actions = getModuleActions(module);
+      newPerms[module] = Object.fromEntries(
+        actions.map(action => [action, !allChecked])
+      );
+    });
+    
+    setSelectedRole({
+      ...selectedRole,
+      permissions: newPerms,
+    });
   };
 
   const userColumns = [
@@ -166,7 +316,7 @@ export function UsersRolesSection() {
       label: 'Name',
       sortable: true,
       render: (_: any, row: User) => (
-        <div>
+        <div className={row.status === 'Disabled' ? 'opacity-60' : ''}>
           <div className="font-medium text-gray-900">{row.firstName} {row.lastName}</div>
           <div className="text-sm text-gray-500">{row.email}</div>
         </div>
@@ -181,18 +331,8 @@ export function UsersRolesSection() {
       ),
     },
     {
-      key: 'status',
-      label: 'Status',
-      sortable: true,
-      render: (_: any, row: User) => (
-        <Badge variant={row.status === 'Active' ? 'success' : 'default'}>
-          {row.status}
-        </Badge>
-      ),
-    },
-    {
       key: 'sites',
-      label: 'Sites',
+      label: 'Site(s)',
       sortable: false,
       render: (_: any, row: User) => (
         <div className="text-sm text-gray-600">
@@ -200,6 +340,16 @@ export function UsersRolesSection() {
             ? row.siteIds.map(id => sites.find(s => s.id === id)?.name).filter(Boolean).join(', ')
             : '—'}
         </div>
+      ),
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      sortable: true,
+      render: (_: any, row: User) => (
+        <Badge variant={row.status === 'Active' ? 'success' : 'default'}>
+          {row.status}
+        </Badge>
       ),
     },
     {
@@ -216,24 +366,55 @@ export function UsersRolesSection() {
       key: 'actions',
       label: 'Actions',
       sortable: false,
-      render: (_: any, row: User) => (
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => handleEditUser(row)}
-            className="p-1 text-blue-600 hover:bg-blue-50 rounded"
-            title="Edit"
-          >
-            <Edit className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => handleDisableUser(row)}
-            className="p-1 text-orange-600 hover:bg-orange-50 rounded"
-            title={row.status === 'Active' ? 'Disable' : 'Enable'}
-          >
-            <Shield className="w-4 h-4" />
-          </button>
-        </div>
-      ),
+      render: (_: any, row: User) => {
+        const menuRef = getUserMenuRef(row.id);
+        const menuItems = [
+          {
+            label: 'View',
+            icon: Eye,
+            onClick: () => handleViewUser(row),
+          },
+          {
+            label: 'Edit',
+            icon: Edit,
+            onClick: () => handleEditUser(row),
+          },
+          {
+            label: row.status === 'Active' ? 'Disable' : 'Enable',
+            icon: X,
+            onClick: () => handleDisableEnableUser(row),
+          },
+        ];
+
+        return (
+          <div className="relative">
+            <button
+              ref={(el) => {
+                if (menuRef) {
+                  menuRef.current = el;
+                }
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setUserMenuOpenId(userMenuOpenId === row.id ? null : row.id);
+              }}
+              className="p-1 rounded hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              aria-label="Actions menu"
+            >
+              <MoreVertical className="w-5 h-5 text-gray-600" />
+            </button>
+            {menuRef && (
+              <DropdownMenu
+                isOpen={userMenuOpenId === row.id}
+                onClose={() => setUserMenuOpenId(null)}
+                anchorRef={menuRef as React.RefObject<HTMLElement>}
+                items={menuItems}
+                width="w-48"
+              />
+            )}
+          </div>
+        );
+      },
     },
   ];
 
@@ -266,7 +447,7 @@ export function UsersRolesSection() {
       sortable: false,
       render: (_: any, row: Role) => (
         <button
-          onClick={() => handleEditRole(row)}
+          onClick={() => handleEditRolePermissions(row)}
           className="p-1 text-blue-600 hover:bg-blue-50 rounded"
           title="Edit Permissions"
         >
@@ -279,7 +460,7 @@ export function UsersRolesSection() {
   const canEdit = currentUser?.role === 'Admin';
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 w-full">
       <Tabs
         tabs={[
           {
@@ -331,6 +512,7 @@ export function UsersRolesSection() {
                     <SortableTable
                       columns={userColumns}
                       data={filteredUsers}
+                      getRowClassName={(row: User) => row.status === 'Disabled' ? 'opacity-60 bg-gray-50' : ''}
                     />
                   </div>
                 </Card>
@@ -342,6 +524,14 @@ export function UsersRolesSection() {
             label: 'Roles & Permissions',
             content: (
               <div className="mt-4 space-y-4">
+                <div className="flex justify-end">
+                  {canEdit && (
+                    <Button onClick={handleAddRole}>
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add Role
+                    </Button>
+                  )}
+                </div>
                 <Card>
                   <div className="p-6">
                     <SortableTable
@@ -358,16 +548,16 @@ export function UsersRolesSection() {
         onTabChange={(tabId) => setActiveTab(tabId as typeof activeTab)}
       />
 
-      {/* Add/Edit User Modal */}
-      <Modal
-        isOpen={showUserModal}
+      {/* Add/Edit User Drawer */}
+      <SlideOver
+        isOpen={showUserDrawer}
         onClose={() => {
-          setShowUserModal(false);
+          setShowUserDrawer(false);
           setUserForm({});
           setSelectedUser(null);
         }}
         title={selectedUser ? 'Edit User' : 'Add User'}
-        size="lg"
+        width="lg"
       >
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
@@ -420,25 +610,12 @@ export function UsersRolesSection() {
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Assigned Sites
             </label>
-            <div className="space-y-2 max-h-48 overflow-y-auto border border-gray-200 rounded-lg p-3">
-              {sites.filter(s => s.status === 'Active').map(site => (
-                <label key={site.id} className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={userForm.siteIds?.includes(site.id) || false}
-                    onChange={(e) => {
-                      const currentIds = userForm.siteIds || [];
-                      const newIds = e.target.checked
-                        ? [...currentIds, site.id]
-                        : currentIds.filter(id => id !== site.id);
-                      setUserForm(prev => ({ ...prev, siteIds: newIds }));
-                    }}
-                    className="rounded border-gray-300"
-                  />
-                  <span className="text-sm text-gray-700">{site.name}</span>
-                </label>
-              ))}
-            </div>
+            <SearchableMultiSelect
+              options={sites.filter(s => s.status === 'Active').map(s => ({ value: s.id, label: s.name }))}
+              selected={userForm.siteIds || []}
+              onChange={(selected) => setUserForm(prev => ({ ...prev, siteIds: selected }))}
+              placeholder="Select sites..."
+            />
           </div>
           
           <div className="flex gap-2 pt-4 border-t">
@@ -448,7 +625,7 @@ export function UsersRolesSection() {
             <Button
               variant="outline"
               onClick={() => {
-                setShowUserModal(false);
+                setShowUserDrawer(false);
                 setUserForm({});
                 setSelectedUser(null);
               }}
@@ -457,100 +634,176 @@ export function UsersRolesSection() {
             </Button>
           </div>
         </div>
-      </Modal>
+      </SlideOver>
 
-      {/* Disable User Confirmation Modal */}
-      <Modal
-        isOpen={showDisableModal}
+      {/* View User Drawer (Read-only) */}
+      <SlideOver
+        isOpen={showUserViewDrawer}
         onClose={() => {
-          setShowDisableModal(false);
+          setShowUserViewDrawer(false);
           setSelectedUser(null);
         }}
-        title={selectedUser?.status === 'Active' ? 'Disable User' : 'Enable User'}
-        size="md"
+        title="User Details"
+        width="lg"
+      >
+        {selectedUser && (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+              <div className="text-gray-900">{selectedUser.firstName} {selectedUser.lastName}</div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+              <div className="text-gray-900">{selectedUser.email}</div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+              <Badge variant="default">{selectedUser.role}</Badge>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+              <Badge variant={selectedUser.status === 'Active' ? 'success' : 'default'}>
+                {selectedUser.status}
+              </Badge>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Assigned Sites</label>
+              <div className="text-gray-900">
+                {selectedUser.siteIds.length > 0
+                  ? selectedUser.siteIds.map(id => sites.find(s => s.id === id)?.name).filter(Boolean).join(', ')
+                  : 'None'}
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Last Login</label>
+              <div className="text-gray-900">
+                {selectedUser.lastLogin ? new Date(selectedUser.lastLogin).toLocaleString() : 'Never'}
+              </div>
+            </div>
+          </div>
+        )}
+      </SlideOver>
+
+      {/* Add Role Drawer */}
+      <SlideOver
+        isOpen={showRoleDrawer}
+        onClose={() => {
+          setShowRoleDrawer(false);
+          setRoleForm({});
+        }}
+        title="Add Role"
+        width="lg"
       >
         <div className="space-y-4">
-          <p className="text-gray-700">
-            Are you sure you want to {selectedUser?.status === 'Active' ? 'disable' : 'enable'}{' '}
-            <strong>{selectedUser?.firstName} {selectedUser?.lastName}</strong>?
-          </p>
-          <div className="flex gap-2 pt-4">
-            <Button variant="primary" onClick={confirmDisableUser} className="flex-1">
-              Confirm
+          <Input
+            label="Role Name"
+            value={roleForm.name || ''}
+            onChange={(e) => setRoleForm(prev => ({ ...prev, name: e.target.value }))}
+            required
+            placeholder="e.g., Custom Role"
+          />
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Copy Permissions From (Optional)
+            </label>
+            <Select
+              value=""
+              onChange={(e) => {
+                if (e.target.value) {
+                  const templateRole = roles.find(r => r.id === e.target.value);
+                  if (templateRole) {
+                    setRoleForm(prev => ({ ...prev, permissions: JSON.parse(JSON.stringify(templateRole.permissions)) }));
+                  }
+                }
+              }}
+              options={[
+                { value: '', label: 'None (start from scratch)' },
+                ...roles.map(r => ({ value: r.id, label: r.name })),
+              ]}
+            />
+          </div>
+          
+          <div className="flex gap-2 pt-4 border-t">
+            <Button variant="primary" onClick={handleSaveRole} className="flex-1" disabled={!roleForm.name}>
+              Create Role
             </Button>
             <Button
               variant="outline"
               onClick={() => {
-                setShowDisableModal(false);
-                setSelectedUser(null);
+                setShowRoleDrawer(false);
+                setRoleForm({});
               }}
             >
               Cancel
             </Button>
           </div>
         </div>
-      </Modal>
+      </SlideOver>
 
-      {/* Edit Role Permissions Modal */}
-      <Modal
-        isOpen={showRoleModal}
+      {/* Permissions Editor Drawer */}
+      <SlideOver
+        isOpen={showPermissionsDrawer}
         onClose={() => {
-          setShowRoleModal(false);
+          setShowPermissionsDrawer(false);
           setSelectedRole(null);
         }}
-        title={`Edit Permissions: ${selectedRole?.name}`}
-        size="xl"
+        title={selectedRole ? `Edit Permissions: ${selectedRole.name}` : 'Edit Permissions'}
+        width="xl"
       >
         {selectedRole && (
           <div className="space-y-6">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left p-2 font-semibold text-gray-700">Module</th>
-                    <th className="text-center p-2 font-semibold text-gray-700">View</th>
-                    <th className="text-center p-2 font-semibold text-gray-700">Create</th>
-                    <th className="text-center p-2 font-semibold text-gray-700">Edit</th>
-                    <th className="text-center p-2 font-semibold text-gray-700">Delete/Close</th>
-                    <th className="text-center p-2 font-semibold text-gray-700">Export</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Object.entries(selectedRole.permissions).map(([module, actions]) => (
-                    <tr key={module} className="border-b">
-                      <td className="p-2 font-medium text-gray-900">{module}</td>
-                      {['View', 'Create', 'Edit', 'Delete', 'Close', 'Export'].map(action => {
-                        const actionKey = action === 'Delete' || action === 'Close' 
-                          ? (module === 'Inspections' || module === 'Defects' || module === 'WorkOrders' ? 'Close' : 'Delete')
-                          : action;
-                        const hasPermission = actions[actionKey] || false;
-                        return (
-                          <td key={action} className="p-2 text-center">
-                            <input
-                              type="checkbox"
-                              checked={hasPermission}
-                              onChange={(e) => {
-                                const updatedRole = {
-                                  ...selectedRole,
-                                  permissions: {
-                                    ...selectedRole.permissions,
-                                    [module]: {
-                                      ...actions,
-                                      [actionKey]: e.target.checked,
-                                    },
-                                  },
-                                };
-                                setSelectedRole(updatedRole);
-                              }}
-                              className="rounded border-gray-300"
-                            />
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            {/* Global Select All */}
+            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
+              <div>
+                <div className="font-medium text-gray-900">All Permissions</div>
+                <div className="text-sm text-gray-600">Toggle all permissions for this role</div>
+              </div>
+              <button
+                onClick={toggleAllPermissions}
+                className="px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg border border-blue-200"
+              >
+                Select All / Deselect All
+              </button>
+            </div>
+
+            {/* Module Permissions */}
+            <div className="space-y-4">
+              {PERMISSION_MODULES.map(module => {
+                const actions = getModuleActions(module);
+                const modulePerms = selectedRole.permissions[module] || {};
+                const allModuleChecked = actions.every(action => modulePerms[action] || false);
+                
+                return (
+                  <div key={module} className="border border-gray-200 rounded-lg overflow-hidden">
+                    {/* Module Header */}
+                    <div className="flex items-center justify-between p-4 bg-gray-50 border-b border-gray-200">
+                      <div className="font-semibold text-gray-900">{module}</div>
+                      <button
+                        onClick={() => toggleModulePermissions(module)}
+                        className="text-sm font-medium text-blue-600 hover:text-blue-700"
+                      >
+                        {allModuleChecked ? 'Deselect All' : 'Select All'}
+                      </button>
+                    </div>
+                    
+                    {/* Module Actions */}
+                    <div className="p-4 grid grid-cols-2 md:grid-cols-3 gap-4">
+                      {actions.map(action => (
+                        <label key={action} className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={modulePerms[action] || false}
+                            onChange={() => togglePermission(module, action)}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="text-sm text-gray-700">{action}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
             
             <div className="flex gap-2 pt-4 border-t">
@@ -560,7 +813,7 @@ export function UsersRolesSection() {
               <Button
                 variant="outline"
                 onClick={() => {
-                  setShowRoleModal(false);
+                  setShowPermissionsDrawer(false);
                   setSelectedRole(null);
                 }}
               >
@@ -569,9 +822,7 @@ export function UsersRolesSection() {
             </div>
           </div>
         )}
-      </Modal>
+      </SlideOver>
     </div>
   );
 }
-
-

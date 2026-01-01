@@ -11,10 +11,11 @@ import { useAuth } from '../../../contexts/AuthContext';
 import { useInspections } from '../context/InspectionsContext';
 import { showToast } from '../../../components/common/Toast';
 import { getAssets, getAssetTypes } from '../../assets/services';
-import { Plus, GripVertical, ArrowUp, ArrowDown, Trash2, ChevronDown, ChevronUp, Download, Upload, AlertTriangle, Info } from 'lucide-react';
+import { Plus, GripVertical, ArrowUp, ArrowDown, Trash2, ChevronDown, ChevronUp, Download, Upload, AlertTriangle, Info, ChevronRight } from 'lucide-react';
+import { DropdownMenu } from '../../../components/common/DropdownMenu';
 import { downloadExcelTemplate, uploadExcelFile } from '../utils/excelUtils';
 import { UNIT_OPTIONS, STANDARD_UNITS } from '../constants/units';
-import type { InspectionType, ChecklistItem, ChecklistSection } from '../types';
+import type { InspectionType, ChecklistItem, ChecklistSection, InspectionTemplateConfig } from '../types';
 
 type ApplyScope = 'ALL' | 'TYPES' | 'ASSETS';
 
@@ -33,6 +34,34 @@ export function CreateTemplatePage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isPublishing, setIsPublishing] = useState(false);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
+  
+  // Template configuration
+  const [templateConfig, setTemplateConfig] = useState<InspectionTemplateConfig>({
+    requireSupervisorApproval: false,
+    requireManagerApproval: false,
+    requireSignatures: false,
+    requireOperativeSignature: false,
+    requireSupervisorSignature: false,
+    requireManagerSignature: false,
+    signatureRoles: [],
+    allowDefectCreation: true,
+    allowPhotoUploads: true,
+    allowFileUpload: true,
+    notesRequired: false,
+    safetyCritical: false,
+    statutory: false,
+    complianceTags: [],
+    applicableAssetTypes: [],
+    applicableSiteIds: [],
+    applicableLocationIds: [],
+  });
+  
+  // Advanced config collapse state
+  const [isAdvancedConfigExpanded, setIsAdvancedConfigExpanded] = useState(false);
+  
+  // Import/Export dropdown state
+  const [isImportExportOpen, setIsImportExportOpen] = useState(false);
+  const importExportButtonRef = useRef<HTMLButtonElement>(null);
   
   // Apply Scope state
   const [applyScope, setApplyScope] = useState<ApplyScope>('ALL');
@@ -151,12 +180,13 @@ export function CreateTemplatePage() {
       id: `item-${Date.now()}`,
       sectionId: targetSectionId,
       question: '',
-      type: 'PassFailNA',
+      type: 'PassFail',
       required: true,
       safetyCritical: false,
       order: items.filter((i) => i.sectionId === targetSectionId).length,
       photoRequiredOnFail: false,
       failRequiresComment: false,
+      allowDefectCreation: templateConfig.allowDefectCreation,
     };
     setItems([...items, newItem]);
   };
@@ -403,7 +433,13 @@ export function CreateTemplatePage() {
         items: items.map((item, index) => ({
           ...item,
           order: item.order !== undefined ? item.order : index,
+          failRequiresComment: item.failRequiresComment ?? false, // Ensure default
+          allowDefectCreation: item.allowDefectCreation ?? templateConfig.allowDefectCreation, // Default from template config
         })),
+        config: {
+          ...templateConfig,
+          applicableAssetTypes: applyScope === 'TYPES' ? selectedAssetTypeIds : templateConfig.applicableAssetTypes,
+        },
         isActive: false,
         createdAt: new Date().toISOString(),
         createdBy: user.id,
@@ -451,7 +487,13 @@ export function CreateTemplatePage() {
         items: items.map((item, index) => ({
           ...item,
           order: item.order !== undefined ? item.order : index,
+          failRequiresComment: item.failRequiresComment ?? false,
+          allowDefectCreation: item.allowDefectCreation ?? templateConfig.allowDefectCreation,
         })),
+        config: {
+          ...templateConfig,
+          applicableAssetTypes: applyScope === 'TYPES' ? selectedAssetTypeIds : templateConfig.applicableAssetTypes,
+        },
         isActive: true,
         createdAt: new Date().toISOString(),
         createdBy: user.id,
@@ -474,6 +516,51 @@ export function CreateTemplatePage() {
   const groupedItems = (sectionId: string) => {
     return items.filter((item) => item.sectionId === sectionId).sort((a, b) => a.order - b.order);
   };
+  
+  // Generate summary chips for advanced config
+  const getAdvancedConfigSummary = () => {
+    const chips: string[] = [];
+    
+    // Approvals
+    if (templateConfig.requireSupervisorApproval && templateConfig.requireManagerApproval) {
+      chips.push('Approvals: Both');
+    } else if (templateConfig.requireSupervisorApproval) {
+      chips.push('Approvals: Supervisor');
+    } else if (templateConfig.requireManagerApproval) {
+      chips.push('Approvals: Manager');
+    } else {
+      chips.push('Approvals: None');
+    }
+    
+    // Signatures
+    if (templateConfig.requireSignatures) {
+      const roles: string[] = [];
+      if (templateConfig.requireOperativeSignature) roles.push('Operative');
+      if (templateConfig.requireSupervisorSignature) roles.push('Supervisor');
+      if (templateConfig.requireManagerSignature) roles.push('Manager');
+      chips.push(`Signatures: ${roles.length > 0 ? roles.join(', ') : 'Required'}`);
+    } else {
+      chips.push('Signatures: Not required');
+    }
+    
+    // Defects
+    chips.push(`Defects: ${templateConfig.allowDefectCreation ? 'Allowed' : 'Not allowed'}`);
+    
+    // Compliance tags
+    if (templateConfig.safetyCritical || templateConfig.statutory || (templateConfig.complianceTags && templateConfig.complianceTags.length > 0)) {
+      const tags: string[] = [];
+      if (templateConfig.safetyCritical) tags.push('Safety-Critical');
+      if (templateConfig.statutory) tags.push('Statutory');
+      if (templateConfig.complianceTags && templateConfig.complianceTags.length > 0) {
+        tags.push(...templateConfig.complianceTags);
+      }
+      if (tags.length > 0) {
+        chips.push(`Compliance: ${tags.join(', ')}`);
+      }
+    }
+    
+    return chips;
+  };
 
   return (
     <div className="p-6 space-y-6">
@@ -489,6 +576,38 @@ export function CreateTemplatePage() {
             >
               Cancel
             </Button>
+            <div className="relative">
+              <Button
+                ref={importExportButtonRef}
+                variant="outline"
+                onClick={() => setIsImportExportOpen(!isImportExportOpen)}
+                title="Use Excel to build checklist sections and items, then upload to populate the builder."
+              >
+                Import / Export
+                <ChevronDown className={`w-4 h-4 ml-2 transition-transform ${isImportExportOpen ? 'rotate-180' : ''}`} />
+              </Button>
+              {isImportExportOpen && (
+                <DropdownMenu
+                  isOpen={isImportExportOpen}
+                  onClose={() => setIsImportExportOpen(false)}
+                  anchorRef={importExportButtonRef}
+                  align="right"
+                  width="w-64"
+                  items={[
+                    {
+                      label: 'Download Excel Template',
+                      icon: Download,
+                      onClick: handleDownloadTemplate,
+                    },
+                    {
+                      label: 'Upload Completed Template',
+                      icon: Upload,
+                      onClick: () => fileInputRef.current?.click(),
+                    },
+                  ]}
+                />
+              )}
+            </div>
             <Button
               variant="outline"
               onClick={handleSaveDraft}
@@ -508,9 +627,9 @@ export function CreateTemplatePage() {
 
       {/* Template Details Card */}
       <Card>
-        <div className="p-6 space-y-6">
+        <div className="p-4 space-y-4">
           {/* Row 1: Template Name & Inspection Type */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <Input
                 label="Template Name *"
@@ -534,19 +653,24 @@ export function CreateTemplatePage() {
                 value={inspectionType}
                 onChange={(e) => setInspectionType(e.target.value as InspectionType)}
                 options={[
-                  { value: 'PlantAcceptance', label: 'Plant Acceptance' },
-                  { value: 'Daily', label: 'Daily' },
-                  { value: 'Weekly', label: 'Weekly' },
-                  { value: 'Monthly', label: 'Monthly' },
-                  { value: 'PreUse', label: 'Pre-Use' },
-                  { value: 'TimeBased', label: 'Time-Based' },
+                  { value: 'Safety', label: 'Safety' },
+                  { value: 'Statutory', label: 'Statutory' },
+                  { value: 'Operational', label: 'Operational' },
+                  { value: 'Handover', label: 'Handover' },
+                  { value: 'Custom', label: 'Custom' },
+                  { value: 'PlantAcceptance', label: 'Plant Acceptance' }, // Legacy
+                  { value: 'Daily', label: 'Daily' }, // Legacy
+                  { value: 'Weekly', label: 'Weekly' }, // Legacy
+                  { value: 'Monthly', label: 'Monthly' }, // Legacy
+                  { value: 'PreUse', label: 'Pre-Use' }, // Legacy
+                  { value: 'TimeBased', label: 'Time-Based' }, // Legacy
                 ]}
               />
             </div>
           </div>
 
           {/* Row 2: Frequency & Apply Scope */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <Select
                 label="Frequency (Optional)"
@@ -628,53 +752,284 @@ export function CreateTemplatePage() {
 
           {/* Row 3: Description */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
               Description
             </label>
             <textarea
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              rows={3}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+              rows={2}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Template description..."
             />
           </div>
 
-          {/* Excel Import/Export */}
-          <div className="border-t pt-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Import / Export (Excel)
-            </label>
-            <div className="flex flex-col sm:flex-row gap-3">
-              <Button
-                variant="outline"
-                onClick={handleDownloadTemplate}
-              >
-                <Download className="w-4 h-4 mr-2" />
-                Download Excel Template
-              </Button>
-              <div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".xlsx,.xls,.csv"
-                  onChange={handleUploadTemplate}
-                  className="hidden"
-                  id="excel-upload"
-                />
-                <Button
-                  variant="outline"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <Upload className="w-4 h-4 mr-2" />
-                  Upload Completed Template
-                </Button>
+          {/* Advanced Template Configuration - Collapsible */}
+          <div className="border-t pt-3">
+            <button
+              type="button"
+              onClick={() => setIsAdvancedConfigExpanded(!isAdvancedConfigExpanded)}
+              className="w-full flex items-center justify-between text-left py-2 hover:bg-gray-50 rounded-lg px-2 -mx-2 transition-colors"
+              aria-expanded={isAdvancedConfigExpanded}
+            >
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-semibold text-gray-900">Advanced Template Configuration</h3>
+                {!isAdvancedConfigExpanded && (
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {getAdvancedConfigSummary().map((chip, idx) => (
+                      <span
+                        key={idx}
+                        className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700"
+                      >
+                        {chip}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {isAdvancedConfigExpanded ? (
+                <ChevronDown className="w-4 h-4 text-gray-500" />
+              ) : (
+                <ChevronRight className="w-4 h-4 text-gray-500" />
+              )}
+            </button>
+            
+            {isAdvancedConfigExpanded && (
+              <div className="pt-3 space-y-4">
+                <p className="text-xs text-gray-600">Configure approval workflows, signatures, and compliance rules for inspections created from this template.</p>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Approval Workflows */}
+              <div className="space-y-3">
+                <h4 className="text-sm font-medium text-gray-700">Approval Workflows</h4>
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={templateConfig.requireSupervisorApproval}
+                      onChange={(e) => setTemplateConfig(prev => ({ ...prev, requireSupervisorApproval: e.target.checked }))}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm text-gray-700">Require Supervisor Approval</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={templateConfig.requireManagerApproval}
+                      onChange={(e) => setTemplateConfig(prev => ({ ...prev, requireManagerApproval: e.target.checked }))}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm text-gray-700">Require Manager Approval</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Signatures */}
+              <div className="space-y-3">
+                <h4 className="text-sm font-medium text-gray-700">Signatures</h4>
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={templateConfig.requireSignatures}
+                      onChange={(e) => {
+                        const enabled = e.target.checked;
+                        setTemplateConfig(prev => ({
+                          ...prev,
+                          requireSignatures: enabled,
+                          requireOperativeSignature: enabled ? prev.requireOperativeSignature : false,
+                          requireSupervisorSignature: enabled ? prev.requireSupervisorSignature : false,
+                        }));
+                      }}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm text-gray-700">Require Signatures</span>
+                  </label>
+                  {templateConfig.requireSignatures && (
+                    <>
+                      <label className="flex items-center gap-2 ml-6">
+                        <input
+                          type="checkbox"
+                          checked={templateConfig.requireOperativeSignature}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setTemplateConfig(prev => {
+                              const roles = prev.signatureRoles || [];
+                              if (checked && !roles.includes('operative')) {
+                                return { ...prev, requireOperativeSignature: checked, signatureRoles: [...roles, 'operative'] };
+                              }
+                              if (!checked) {
+                                return { ...prev, requireOperativeSignature: checked, signatureRoles: roles.filter(r => r !== 'operative') };
+                              }
+                              return { ...prev, requireOperativeSignature: checked };
+                            });
+                          }}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm text-gray-700">Technician/Fitter (Performer)</span>
+                      </label>
+                      <label className="flex items-center gap-2 ml-6">
+                        <input
+                          type="checkbox"
+                          checked={templateConfig.requireSupervisorSignature}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setTemplateConfig(prev => {
+                              const roles = prev.signatureRoles || [];
+                              if (checked && !roles.includes('supervisor')) {
+                                return { ...prev, requireSupervisorSignature: checked, signatureRoles: [...roles, 'supervisor'] };
+                              }
+                              if (!checked) {
+                                return { ...prev, requireSupervisorSignature: checked, signatureRoles: roles.filter(r => r !== 'supervisor') };
+                              }
+                              return { ...prev, requireSupervisorSignature: checked };
+                            });
+                          }}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm text-gray-700">Supervisor (Reviewer)</span>
+                      </label>
+                      <label className="flex items-center gap-2 ml-6">
+                        <input
+                          type="checkbox"
+                          checked={templateConfig.requireManagerSignature || false}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setTemplateConfig(prev => {
+                              const roles = prev.signatureRoles || [];
+                              if (checked && !roles.includes('manager')) {
+                                return { ...prev, requireManagerSignature: checked, signatureRoles: [...roles, 'manager'] };
+                              }
+                              if (!checked) {
+                                return { ...prev, requireManagerSignature: checked, signatureRoles: roles.filter(r => r !== 'manager') };
+                              }
+                              return { ...prev, requireManagerSignature: checked };
+                            });
+                          }}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm text-gray-700">Manager/Superintendent (Approver)</span>
+                      </label>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Defect Creation */}
+              <div className="space-y-3">
+                <h4 className="text-sm font-medium text-gray-700">Defect Creation</h4>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={templateConfig.allowDefectCreation}
+                    onChange={(e) => setTemplateConfig(prev => ({ ...prev, allowDefectCreation: e.target.checked }))}
+                    className="w-4 h-4"
+                  />
+                  <span className="text-sm text-gray-700">Allow Defect Creation from Failed Items</span>
+                </label>
+                <p className="text-xs text-gray-500 ml-6">Can be overridden per checklist item</p>
+              </div>
+
+              {/* Evidence Defaults */}
+              <div className="space-y-3">
+                <h4 className="text-sm font-medium text-gray-700">Evidence Defaults</h4>
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={templateConfig.allowPhotoUploads ?? true}
+                      onChange={(e) => setTemplateConfig(prev => ({ ...prev, allowPhotoUploads: e.target.checked }))}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm text-gray-700">Allow photo uploads</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={templateConfig.allowFileUpload ?? true}
+                      onChange={(e) => setTemplateConfig(prev => ({ ...prev, allowFileUpload: e.target.checked }))}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm text-gray-700">Allow file upload</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={templateConfig.notesRequired ?? false}
+                      onChange={(e) => setTemplateConfig(prev => ({ ...prev, notesRequired: e.target.checked }))}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm text-gray-700">Notes required</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Compliance Tags */}
+              <div className="space-y-3">
+                <h4 className="text-sm font-medium text-gray-700">Compliance Tags</h4>
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={templateConfig.safetyCritical || false}
+                      onChange={(e) => setTemplateConfig(prev => ({ ...prev, safetyCritical: e.target.checked }))}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm text-gray-700">Safety-Critical</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={templateConfig.statutory || false}
+                      onChange={(e) => setTemplateConfig(prev => ({ ...prev, statutory: e.target.checked }))}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm text-gray-700">Statutory</span>
+                  </label>
+                  <div className="ml-6 space-y-2">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Standard Tags (multi-select)</label>
+                    <div className="space-y-1.5">
+                      {['LOLER', 'PUWER', 'Lifting', 'Pressure', 'Electrical', 'Fire'].map((tag) => (
+                        <label key={tag} className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={templateConfig.complianceTags?.includes(tag) || false}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              setTemplateConfig(prev => {
+                                const tags = prev.complianceTags || [];
+                                if (checked && !tags.includes(tag)) {
+                                  return { ...prev, complianceTags: [...tags, tag] };
+                                }
+                                if (!checked) {
+                                  return { ...prev, complianceTags: tags.filter(t => t !== tag) };
+                                }
+                                return prev;
+                              });
+                            }}
+                            className="w-4 h-4"
+                          />
+                          <span className="text-xs text-gray-700">{tag}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
-            <p className="text-xs text-gray-500 mt-2">
-              Use Excel to build checklist sections and items, then upload to populate the builder.
-            </p>
           </div>
+            )}
+          </div>
+
+          {/* Hidden file input for upload */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            onChange={handleUploadTemplate}
+            className="hidden"
+            id="excel-upload"
+          />
         </div>
       </Card>
 
@@ -842,19 +1197,40 @@ export function CreateTemplatePage() {
                                 <div className="lg:col-span-2">
                                   <Select
                                     value={item.type}
-                                    onChange={(e) => updateItem(item.id, { type: e.target.value as ChecklistItem['type'] })}
+                                    onChange={(e) => {
+                                      const newType = e.target.value as ChecklistItem['type'];
+                                      // Reset type-specific fields when changing type
+                                      const updates: Partial<ChecklistItem> = { type: newType };
+                                      if (newType !== 'Numeric') {
+                                        updates.minValue = undefined;
+                                        updates.maxValue = undefined;
+                                        updates.unit = undefined;
+                                      }
+                                      if (newType !== 'Dropdown') {
+                                        updates.dropdownOptions = undefined;
+                                      }
+                                      if (newType !== 'PassFail' && newType !== 'PassFailNA' && newType !== 'YesNo') {
+                                        updates.safetyCritical = false;
+                                        updates.failRequiresComment = false;
+                                        updates.photoRequiredOnFail = false;
+                                      }
+                                      updateItem(item.id, updates);
+                                    }}
                                     options={[
+                                      { value: 'YesNo', label: 'Yes/No' },
                                       { value: 'PassFail', label: 'Pass/Fail' },
                                       { value: 'PassFailNA', label: 'Pass/Fail/N/A' },
-                                      { value: 'Number', label: 'Number' },
+                                      { value: 'Checkbox', label: 'Checkbox' },
+                                      { value: 'Numeric', label: 'Numeric' },
                                       { value: 'Text', label: 'Text' },
+                                      { value: 'Signature', label: 'Signature' },
                                     ]}
                                   />
                                 </div>
 
                                 {/* Conditional Fields */}
                                 <div className="lg:col-span-3">
-                                  {item.type === 'Number' && (
+                                  {item.type === 'Numeric' && (
                                     <div className="space-y-2">
                                       <div className="flex gap-2">
                                         {/* Unit Selector */}
@@ -923,6 +1299,34 @@ export function CreateTemplatePage() {
                                       {item.minValue !== undefined && item.maxValue !== undefined && item.minValue > item.maxValue && (
                                         <p className="text-xs text-red-600">Min cannot be greater than Max</p>
                                       )}
+                                      {/* Note about units in guidance text */}
+                                      <p className="text-xs text-gray-500">
+                                        Optional units can be specified in the Guidance Text field below (e.g., "Enter value in PSI").
+                                      </p>
+                                    </div>
+                                  )}
+                                  {item.type === 'Signature' && (
+                                    <div className="space-y-2">
+                                      <p className="text-xs text-gray-500">
+                                        Signature items support drawn (canvas) signatures and typed name fallback. 
+                                        The signer name, date, and time are automatically captured.
+                                      </p>
+                                    </div>
+                                  )}
+                                  {item.type === 'Dropdown' && (
+                                    <div className="space-y-2">
+                                      <label className="text-xs font-medium text-gray-700">Dropdown Options (one per line)</label>
+                                      <textarea
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                                        rows={3}
+                                        placeholder="Option 1&#10;Option 2&#10;Option 3"
+                                        value={item.dropdownOptions?.join('\n') || ''}
+                                        onChange={(e) => {
+                                          const options = e.target.value.split('\n').filter(o => o.trim()).map(o => o.trim());
+                                          updateItem(item.id, { dropdownOptions: options.length > 0 ? options : undefined });
+                                        }}
+                                      />
+                                      <p className="text-xs text-gray-500">Enter one option per line</p>
                                     </div>
                                   )}
                                 </div>
@@ -940,29 +1344,29 @@ export function CreateTemplatePage() {
                                   </label>
                                   <div className="space-y-1">
                                     <label 
-                                      className={`flex items-center gap-2 ${(item.type === 'PassFail' || item.type === 'PassFailNA') ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}
+                                      className={`flex items-center gap-2 ${(item.type === 'PassFail' || item.type === 'PassFailNA' || item.type === 'YesNo') ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}
                                       title={
-                                        (item.type === 'PassFail' || item.type === 'PassFailNA')
+                                        (item.type === 'PassFail' || item.type === 'PassFailNA' || item.type === 'YesNo')
                                           ? 'Safety-critical items represent a risk to people, plant, or environment if they fail.'
-                                          : 'Safety-critical applies to Pass/Fail checks only.'
+                                          : 'Safety-critical applies to Pass/Fail/Yes-No checks only.'
                                       }
                                     >
                                       <input
                                         type="checkbox"
                                         checked={item.safetyCritical || (item as any).critical || false}
                                         onChange={(e) => {
-                                          if (item.type === 'PassFail' || item.type === 'PassFailNA') {
+                                          if (item.type === 'PassFail' || item.type === 'PassFailNA' || item.type === 'YesNo') {
                                             updateItem(item.id, { safetyCritical: e.target.checked });
                                           }
                                         }}
-                                        disabled={item.type !== 'PassFail' && item.type !== 'PassFailNA'}
+                                        disabled={item.type !== 'PassFail' && item.type !== 'PassFailNA' && item.type !== 'YesNo'}
                                         className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 disabled:opacity-50"
                                       />
                                       <span className="text-xs text-gray-700">Safety Critical</span>
                                       <Info className="w-3 h-3 text-gray-400" />
                                     </label>
-                                    {(item.type !== 'PassFail' && item.type !== 'PassFailNA') && (
-                                      <p className="text-xs text-gray-500 ml-6">Applies to Pass/Fail only</p>
+                                    {(item.type !== 'PassFail' && item.type !== 'PassFailNA' && item.type !== 'YesNo') && (
+                                      <p className="text-xs text-gray-500 ml-6">Applies to Pass/Fail/Yes-No only</p>
                                     )}
                                     {(item.safetyCritical || (item as any).critical) && (
                                       <p className="text-xs text-blue-600 ml-6 font-medium">
@@ -970,7 +1374,7 @@ export function CreateTemplatePage() {
                                       </p>
                                     )}
                                   </div>
-                                  {(item.type === 'PassFail' || item.type === 'PassFailNA') && (
+                                  {((item.type === 'PassFail' || item.type === 'PassFailNA' || item.type === 'YesNo') && (
                                     <label className={`flex items-center gap-2 ${(item.safetyCritical || (item as any).critical) ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
                                       <input
                                         type="checkbox"
@@ -983,29 +1387,57 @@ export function CreateTemplatePage() {
                                         disabled={item.safetyCritical || (item as any).critical}
                                         className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 disabled:opacity-50"
                                       />
-                                      <span className="text-xs text-gray-700">Fail Requires Comment</span>
+                                      <span className="text-xs text-gray-700">Fail/No Requires Comment</span>
                                       {(item.safetyCritical || (item as any).critical) && (
                                         <span className="text-xs text-gray-500">(Required)</span>
                                       )}
                                     </label>
-                                  )}
-                                  <label className={`flex items-center gap-2 ${(item.safetyCritical || (item as any).critical) ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
-                                    <input
-                                      type="checkbox"
-                                      checked={item.photoRequiredOnFail}
-                                      onChange={(e) => {
-                                        if (!(item.safetyCritical || (item as any).critical)) {
-                                          updateItem(item.id, { photoRequiredOnFail: e.target.checked });
-                                        }
-                                      }}
-                                      disabled={item.safetyCritical || (item as any).critical}
-                                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 disabled:opacity-50"
-                                    />
-                                    <span className="text-xs text-gray-700">Photo on Fail</span>
-                                    {(item.safetyCritical || (item as any).critical) && (
-                                      <span className="text-xs text-gray-500">(Required)</span>
-                                    )}
-                                  </label>
+                                  ))}
+                                  {((item.type === 'PassFail' || item.type === 'PassFailNA' || item.type === 'YesNo') && (
+                                    <label className={`flex items-center gap-2 ${(item.safetyCritical || (item as any).critical) ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
+                                      <input
+                                        type="checkbox"
+                                        checked={item.photoRequiredOnFail}
+                                        onChange={(e) => {
+                                          if (!(item.safetyCritical || (item as any).critical)) {
+                                            updateItem(item.id, { photoRequiredOnFail: e.target.checked });
+                                          }
+                                        }}
+                                        disabled={item.safetyCritical || (item as any).critical}
+                                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 disabled:opacity-50"
+                                      />
+                                      <span className="text-xs text-gray-700">Photo on Fail/No</span>
+                                      {(item.safetyCritical || (item as any).critical) && (
+                                        <span className="text-xs text-gray-500">(Required)</span>
+                                      )}
+                                    </label>
+                                  ))}
+                                  {((item.type === 'PassFail' || item.type === 'PassFailNA' || item.type === 'YesNo') && (
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                      <input
+                                        type="checkbox"
+                                        checked={item.allowDefectCreation ?? templateConfig.allowDefectCreation}
+                                        onChange={(e) => updateItem(item.id, { allowDefectCreation: e.target.checked })}
+                                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                      />
+                                      <span className="text-xs text-gray-700">Allow Defect Creation</span>
+                                    </label>
+                                  ))}
+                                </div>
+                              </div>
+
+                              {/* Additional Fields Row */}
+                              <div className="mt-3 space-y-2">
+                                {/* Guidance Text */}
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">Guidance Text (Optional)</label>
+                                  <textarea
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                                    rows={2}
+                                    placeholder="Help text shown to operative when completing this item..."
+                                    value={item.guidanceText || ''}
+                                    onChange={(e) => updateItem(item.id, { guidanceText: e.target.value || undefined })}
+                                  />
                                 </div>
                               </div>
 

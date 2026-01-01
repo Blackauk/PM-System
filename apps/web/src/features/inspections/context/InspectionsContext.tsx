@@ -434,6 +434,13 @@ export function InspectionsProvider({ children }: { children: ReactNode }) {
 
   const sync = useCallback(async () => {
     try {
+      // Mark pending inspections as syncing
+      const pendingInspections = state.inspections.filter(i => i.syncStatus === 'pending');
+      for (const inspection of pendingInspections) {
+        await updateInspection(inspection.id, { syncStatus: 'syncing', lastSyncAttempt: new Date().toISOString() });
+        dispatch({ type: 'UPDATE_INSPECTION', payload: { ...inspection, syncStatus: 'syncing' } });
+      }
+
       await flushSyncQueue();
       await refreshSyncQueue();
       await loadInspections();
@@ -441,7 +448,7 @@ export function InspectionsProvider({ children }: { children: ReactNode }) {
     } catch (error: any) {
       dispatch({ type: 'SET_ERROR', payload: error.message });
     }
-  }, [loadInspections, loadSummary, refreshSyncQueue]);
+  }, [loadInspections, loadSummary, refreshSyncQueue, state.inspections]);
 
   const updateSettings = useCallback(
     async (settings: Partial<InspectionSettings>) => {

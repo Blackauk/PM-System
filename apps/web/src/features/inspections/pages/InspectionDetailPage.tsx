@@ -14,7 +14,11 @@ import {
   canApproveInspection,
   canCloseInspection,
 } from '../lib/permissions';
+import { getScheduleByInspectionId } from '../db/perInspectionScheduleRepository';
+import { InspectionScheduleModal } from '../components/InspectionScheduleModal';
 import type { ChecklistItemAnswer, ChecklistItemResult, Inspection } from '../types';
+import type { PerInspectionSchedule } from '../types/perInspectionSchedule';
+import { Clock } from 'lucide-react';
 
 export function InspectionDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -40,8 +44,39 @@ export function InspectionDetailPage() {
   useEffect(() => {
     if (currentInspection) {
       setLocalAnswers([...currentInspection.answers]);
+      loadSchedule();
     }
   }, [currentInspection]);
+
+  const loadSchedule = async () => {
+    if (!currentInspection) return;
+    try {
+      const scheduleData = await getScheduleByInspectionId(currentInspection.id);
+      setSchedule(scheduleData || null);
+    } catch (error) {
+      console.error('Failed to load schedule:', error);
+    }
+  };
+
+  const formatScheduleLabel = (schedule: PerInspectionSchedule): string => {
+    if (schedule.frequency === 'Weekly' && schedule.pattern.daysOfWeek && schedule.pattern.daysOfWeek.length > 0) {
+      const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const days = schedule.pattern.daysOfWeek.map((d) => dayNames[d]).join(', ');
+      return `Weekly (${days})`;
+    }
+    if (schedule.frequency === 'Monthly') {
+      if (schedule.pattern.dayOfWeekInMonth) {
+        const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const dayName = dayNames[schedule.pattern.daysOfWeek?.[0] || 1];
+        return `Monthly (${schedule.pattern.dayOfWeekInMonth} ${dayName})`;
+      }
+      return `Monthly (Day ${schedule.pattern.dayOfMonth})`;
+    }
+    if (schedule.frequency === 'Custom') {
+      return `Every ${schedule.pattern.intervalDays} days`;
+    }
+    return schedule.frequency;
+  };
 
   // Alias for convenience
   const inspection = currentInspection;
@@ -80,7 +115,7 @@ export function InspectionDetailPage() {
       id: existingIndex >= 0 ? localAnswers[existingIndex].id : crypto.randomUUID(),
       checklistItemId: itemId,
       result,
-      ...(item.type === 'Number' && typeof value === 'number' && { numericValue: value }),
+      ...(item.type === 'Numeric' && typeof value === 'number' && { numericValue: value }),
       ...(item.type === 'Text' && typeof value === 'string' && { textValue: value }),
     };
 
@@ -358,7 +393,7 @@ export function InspectionDetailPage() {
                                     </button>
                                   )}
                                 </div>
-                              ) : item.type === 'Number' ? (
+                              ) : item.type === 'Numeric' ? (
                                 <input
                                   type="number"
                                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -378,7 +413,7 @@ export function InspectionDetailPage() {
                                 />
                               )}
 
-                              {(answer?.result === 'Fail' || item.type === 'Text' || item.type === 'Number') && (
+                              {(answer?.result === 'Fail' || item.type === 'Text' || item.type === 'Numeric') && (
                                 <div className="mt-2">
                                   <textarea
                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
@@ -587,6 +622,14 @@ export function InspectionDetailPage() {
               <div className="text-sm text-gray-600 mt-2">
                 Inspector: {inspection.inspectorName} • {new Date(inspection.inspectionDate).toLocaleString()}
               </div>
+              {schedule && (
+                <div className="mt-2">
+                  <Badge variant="info" size="sm" className="flex items-center gap-1 w-fit">
+                    <Clock className="w-3 h-3" />
+                    Scheduled: {formatScheduleLabel(schedule)}
+                  </Badge>
+                </div>
+              )}
             </div>
           </div>
 
@@ -626,6 +669,22 @@ export function InspectionDetailPage() {
       <div className="p-6">
         <Tabs tabs={tabs} defaultTab="overview" />
       </div>
+
+      {/* Schedule Modal */}
+      {inspection && (
+        <InspectionScheduleModal
+          isOpen={showScheduleModal}
+          onClose={() => {
+            setShowScheduleModal(false);
+            loadSchedule();
+          }}
+          onSuccess={() => {
+            loadSchedule();
+            setShowScheduleModal(false);
+          }}
+          inspection={inspection}
+        />
+      )}
     </div>
   );
 }

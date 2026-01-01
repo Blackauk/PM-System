@@ -33,6 +33,14 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     console.error('ErrorBoundary caught an error:', error, errorInfo);
+    if (import.meta.env.DEV) {
+      console.error('=== ERROR DETAILS ===');
+      console.error('Error:', error.message);
+      console.error('Stack:', error.stack);
+      console.error('Component Stack:', errorInfo.componentStack);
+      console.error('Route:', window.location.pathname);
+      console.error('Timestamp:', new Date().toISOString());
+    }
     this.setState({
       error,
       errorInfo: {
@@ -164,6 +172,17 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
               <div className="flex justify-center gap-3">
                 <Button onClick={this.handleReload}>Reload Page</Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    this.handleReset();
+                    if (window.location.pathname !== '/dashboard') {
+                      window.location.href = '/#/dashboard';
+                    }
+                  }}
+                >
+                  Back to Dashboard
+                </Button>
                 <Button
                   variant="outline"
                   onClick={this.handleCopyError}

@@ -10,7 +10,8 @@ import { Select } from '../../../components/common/Select';
 import { Input } from '../../../components/common/Input';
 import { SortableTable } from '../../../components/common/SortableTable';
 import { ListPageTable } from '../../../components/common/ListPageTable';
-import { FloatingFilterPanel, FilterSection } from '../../../components/common/FloatingFilterPanel';
+import { FilterPanel } from '../../../components/common/FilterPanel';
+import { FilterSection } from '../../../components/common/FilterSection';
 import { MultiSelectFilter } from '../../../components/common/MultiSelectFilter';
 import { FilterButton } from '../../../components/common/FilterButton';
 import { CreateWorkOrderModal } from '../components/CreateWorkOrderModal';
@@ -43,6 +44,8 @@ export function WorkOrdersListPage() {
   const filterButtonRef = useRef<HTMLDivElement>(null);
   const [tableSearch, setTableSearch] = useState('');
   const [filters, setFilters] = useState<WorkOrderFilter>({});
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const [tempFilters, setTempFilters] = useState<WorkOrderFilter>({});
   const [activeWildcards, setActiveWildcards] = useState<Set<string>>(() => {
     const saved = localStorage.getItem('wo-active-wildcards');
     return saved ? new Set(JSON.parse(saved)) : new Set();
@@ -58,7 +61,6 @@ export function WorkOrdersListPage() {
       navigate(location.pathname, { replace: true, state: {} });
     }
   }, [location.state, location.pathname, navigate]);
-  const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isCreateWOModalOpen, setIsCreateWOModalOpen] = useState(false);
   
   // Selection state
@@ -612,7 +614,10 @@ export function WorkOrdersListPage() {
             searchValue={tableSearch}
             onSearchChange={setTableSearch}
             searchPlaceholder="Search by WO ID, title, asset, site, assigned to…"
-            onFilterClick={() => setIsFilterOpen(!isFilterOpen)}
+            onFilterClick={() => {
+              setTempFilters(filters);
+              setShowFilterPanel(true);
+            }}
             activeFilterCount={activeFilterCount}
             filterButtonRef={filterButtonRef}
             columns={columns}
@@ -661,17 +666,30 @@ export function WorkOrdersListPage() {
       </div>
 
       {/* Filter Panel */}
-      <FloatingFilterPanel
-        isOpen={isFilterOpen}
-        onClose={() => setIsFilterOpen(false)}
-        anchorRef={filterButtonRef}
+      <FilterPanel
+        isOpen={showFilterPanel}
+        onClose={() => {
+          setShowFilterPanel(false);
+          setTempFilters(filters); // Reset temp filters on close
+        }}
+        onApply={() => {
+          setFilters(tempFilters);
+          setShowFilterPanel(false);
+        }}
+        onReset={() => {
+          const emptyFilters: WorkOrderFilter = {};
+          setTempFilters(emptyFilters);
+          setFilters(emptyFilters);
+        }}
+        title="Work Order Filters"
       >
         <div className="space-y-4">
           <FilterSection title="Site">
             <MultiSelectFilter
               options={mockSites.map((site) => ({ value: site.id, label: site.name }))}
-              selected={filters.siteId ? [filters.siteId] : []}
-              onChange={(selected) => setFilters((prev) => ({ ...prev, siteId: selected[0] || undefined }))}
+              selected={Array.isArray(tempFilters.siteId) ? tempFilters.siteId : tempFilters.siteId ? [tempFilters.siteId] : []}
+              onChange={(selected) => setTempFilters(prev => ({ ...prev, siteId: selected.length === 1 ? selected[0] : selected.length > 0 ? selected : undefined }))}
+              placeholder="Select sites..."
             />
           </FilterSection>
 
@@ -684,8 +702,9 @@ export function WorkOrdersListPage() {
                 { value: 'WaitingParts', label: 'Waiting Parts' },
                 { value: 'Completed', label: 'Completed' },
               ]}
-              selected={filters.status ? [filters.status] : []}
-              onChange={(selected) => setFilters((prev) => ({ ...prev, status: selected[0] as WorkOrderStatus || undefined }))}
+              selected={Array.isArray(tempFilters.status) ? tempFilters.status : tempFilters.status ? [tempFilters.status] : []}
+              onChange={(selected) => setTempFilters(prev => ({ ...prev, status: selected.length === 1 ? selected[0] as WorkOrderStatus : selected.length > 0 ? selected[0] as WorkOrderStatus : undefined }))}
+              placeholder="Select statuses..."
             />
           </FilterSection>
 
@@ -697,12 +716,13 @@ export function WorkOrdersListPage() {
                 { value: 'High', label: 'High' },
                 { value: 'Critical', label: 'Critical' },
               ]}
-              selected={filters.priority ? [filters.priority] : []}
-              onChange={(selected) => setFilters((prev) => ({ ...prev, priority: selected[0] as WorkOrderPriority || undefined }))}
+              selected={Array.isArray(tempFilters.priority) ? tempFilters.priority : tempFilters.priority ? [tempFilters.priority] : []}
+              onChange={(selected) => setTempFilters(prev => ({ ...prev, priority: selected.length === 1 ? selected[0] as WorkOrderPriority : selected.length > 0 ? selected[0] as WorkOrderPriority : undefined }))}
+              placeholder="Select priorities..."
             />
           </FilterSection>
         </div>
-      </FloatingFilterPanel>
+      </FilterPanel>
 
       {/* Create Work Order Modal */}
       <CreateWorkOrderModal

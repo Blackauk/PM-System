@@ -34,12 +34,6 @@ export function SettingsMenu({ className = '' }: SettingsMenuProps) {
 
   const menuItems: MenuItem[] = [
     {
-      id: 'overview',
-      label: 'Overview',
-      icon: <SettingsIcon className="w-5 h-5" />,
-      path: '/settings/overview',
-    },
-    {
       id: 'app-settings',
       label: 'App Settings',
       icon: <SettingsIcon className="w-5 h-5" />,
@@ -104,9 +98,6 @@ export function SettingsMenu({ className = '' }: SettingsMenuProps) {
   const filteredItems = menuItems.filter(canAccess);
 
   const isActive = (path: string) => {
-    if (path === '/settings' || path === '/settings/overview') {
-      return location.pathname === '/settings' || location.pathname === '/settings/' || location.pathname === '/settings/overview';
-    }
     return location.pathname.startsWith(path);
   };
 
@@ -162,4 +153,3 @@ export function SettingsMenu({ className = '' }: SettingsMenuProps) {
     </>
   );
 }
-

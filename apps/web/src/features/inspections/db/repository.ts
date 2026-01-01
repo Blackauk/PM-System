@@ -2,6 +2,8 @@ import { getInspectionsDB } from './schema';
 import type { Inspection, InspectionTemplate, InspectionFilter, InspectionSettings, ChecklistItemAnswer } from '../types';
 import { createDefect } from '../../defects/db/repository';
 import type { Defect } from '../../defects/types';
+import { addToSyncQueue } from './syncQueue';
+import { cacheAsset, type CachedAsset } from './cache';
 
 // Generate next inspection code (INSP-000001, INSP-000002, etc.)
 export async function generateInspectionCode(): Promise<string> {
@@ -202,6 +204,7 @@ export async function createInspection(inspection: Omit<Inspection, 'id' | 'insp
   const db = await getInspectionsDB();
   const inspectionCode = await generateInspectionCode();
 
+  const isOnline = navigator.onLine;
   const newInspection: Inspection = {
     ...inspection,
     id: crypto.randomUUID(),
@@ -218,9 +221,36 @@ export async function createInspection(inspection: Omit<Inspection, 'id' | 'insp
       },
     ],
     revisionNumber: 0,
+    syncStatus: isOnline ? 'synced' : 'pending',
+    syncedAt: isOnline ? new Date().toISOString() : undefined,
   };
 
   await db.add('inspections', newInspection);
+
+  // Cache asset metadata for offline use
+  if (inspection.assetId) {
+    try {
+      await cacheAsset({
+        id: inspection.assetId,
+        name: inspection.assetId, // Will be updated when asset is loaded
+        siteId: inspection.siteId,
+        siteName: inspection.siteName,
+        locationId: inspection.locationId,
+        locationName: inspection.locationName,
+        assetTypeId: undefined,
+        assetTypeCode: inspection.assetTypeCode,
+        cachedAt: new Date().toISOString(),
+      });
+    } catch (e) {
+      console.warn('Failed to cache asset:', e);
+    }
+  }
+
+  // Queue for sync if offline
+  if (!isOnline) {
+    await addToSyncQueue('createInspection', newInspection.id, newInspection);
+  }
+
   return newInspection;
 }
 
@@ -267,16 +297,28 @@ export async function updateInspection(id: string, updates: Partial<Inspection>)
     result = calculateInspectionResult(updatedInspection as Inspection);
   }
 
+  const isOnline = navigator.onLine;
+  const now = new Date().toISOString();
   const updated: Inspection = {
     ...existing,
     ...updates,
     result,
-    updatedAt: new Date().toISOString(),
+    updatedAt: now,
     updatedBy: updates.updatedBy || existing.updatedBy,
     updatedByName: updates.updatedByName || existing.updatedByName,
+    // Update sync status
+    syncStatus: isOnline ? (existing.syncStatus === 'pending' ? 'syncing' : 'synced') : 'pending',
+    syncedAt: isOnline && existing.syncStatus !== 'pending' ? now : existing.syncedAt,
+    lastSyncAttempt: isOnline ? now : existing.lastSyncAttempt,
   };
 
   await db.put('inspections', updated);
+
+  // Queue for sync if offline or if this is an update to a pending inspection
+  if (!isOnline || existing.syncStatus === 'pending') {
+    await addToSyncQueue('updateInspection', id, updates);
+  }
+
   return updated;
 }
 
@@ -310,17 +352,20 @@ export async function submitInspection(
     defectIds.push(...createdDefectIds);
   }
 
+  const isOnline = navigator.onLine;
+  const now = new Date().toISOString();
+  
   // Update inspection
   const updated = await updateInspection(id, {
     status: 'Submitted',
     result: calculateInspectionResult(inspection),
-    submittedAt: new Date().toISOString(),
+    submittedAt: now,
     linkedDefectIds: [...inspection.linkedDefectIds, ...defectIds],
     history: [
       ...inspection.history,
       {
         id: crypto.randomUUID(),
-        at: new Date().toISOString(),
+        at: now,
         by: userId,
         byName: userName,
         type: 'status_change',
@@ -330,7 +375,18 @@ export async function submitInspection(
     ],
     updatedBy: userId,
     updatedByName: userName,
+    syncStatus: isOnline ? 'syncing' : 'pending',
+    lastSyncAttempt: now,
   });
+
+  // Queue for sync
+  if (!isOnline) {
+    await addToSyncQueue('submitInspection', id, {
+      status: 'Submitted',
+      submittedAt: now,
+      defectIds,
+    });
+  }
 
   return updated;
 }
@@ -523,14 +579,89 @@ export async function createTemplate(template: Omit<InspectionTemplate, 'id'>): 
   return newTemplate;
 }
 
-export async function getTemplateById(id: string): Promise<InspectionTemplate | undefined> {
-  const db = await getInspectionsDB();
-  return db.get('templates', id);
+// Migration function to convert 'Number' type to 'Numeric'
+function migrateTemplateNumberToNumeric(template: InspectionTemplate): InspectionTemplate {
+  let needsMigration = false;
+  const migratedItems = template.items.map(item => {
+    if (item.type === 'Number') {
+      needsMigration = true;
+      return { ...item, type: 'Numeric' as const };
+    }
+    return item;
+  });
+
+  if (needsMigration) {
+    return {
+      ...template,
+      items: migratedItems,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+  return template;
 }
 
 export async function getAllTemplates(): Promise<InspectionTemplate[]> {
   const db = await getInspectionsDB();
-  return db.getAll('templates');
+  const templates = await db.getAll('templates');
+  // Backward compatibility: add default config if missing and migrate Number to Numeric
+  const migratedTemplates = templates.map(template => {
+    let migrated = template;
+    // Migrate Number to Numeric
+    migrated = migrateTemplateNumberToNumeric(migrated);
+    // Add default config if missing
+    if (!migrated.config) {
+      migrated.config = {
+        requireSupervisorApproval: false,
+        requireManagerApproval: false,
+        requireSignatures: false,
+        requireOperativeSignature: false,
+        requireSupervisorSignature: false,
+        allowDefectCreation: true,
+        applicableAssetTypes: [],
+        applicableSiteIds: [],
+        applicableLocationIds: [],
+      };
+    }
+    // Save migrated template back to DB if it was migrated
+    if (migrated.updatedAt !== template.updatedAt) {
+      db.put('templates', migrated).catch(err => {
+        console.error('Error saving migrated template:', err);
+      });
+    }
+    return migrated;
+  });
+  return migratedTemplates;
+}
+
+export async function getTemplateById(id: string): Promise<InspectionTemplate | undefined> {
+  const db = await getInspectionsDB();
+  const template = await db.get('templates', id);
+  if (!template) return undefined;
+  
+  // Migrate Number to Numeric
+  let migrated = migrateTemplateNumberToNumeric(template);
+  
+  // Add default config if missing
+  if (!migrated.config) {
+    migrated.config = {
+      requireSupervisorApproval: false,
+      requireManagerApproval: false,
+      requireSignatures: false,
+      requireOperativeSignature: false,
+      requireSupervisorSignature: false,
+      allowDefectCreation: true,
+      applicableAssetTypes: [],
+      applicableSiteIds: [],
+      applicableLocationIds: [],
+    };
+  }
+  
+  // Save migrated template back to DB if it was migrated
+  if (migrated.updatedAt !== template.updatedAt) {
+    await db.put('templates', migrated);
+  }
+  
+  return migrated;
 }
 
 export async function updateTemplate(id: string, updates: Partial<InspectionTemplate>): Promise<InspectionTemplate> {

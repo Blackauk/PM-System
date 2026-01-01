@@ -23,6 +23,11 @@ import { TemplateEditorPage } from '../../features/inspections/pages/TemplateEdi
 import { CheckSheetsListPage } from '../../features/inspections/pages/CheckSheetsListPage';
 import { ChecklistsListPage } from '../../features/inspections/pages/ChecklistsListPage';
 import { ChecklistViewPage } from '../../features/inspections/pages/ChecklistViewPage';
+import { InspectionSchedulesPage } from '../../features/inspections/pages/SchedulesPage';
+import { InspectionPlannerPage } from '../../features/inspections/pages/InspectionPlannerPage';
+import { UnifiedSchedulesPage } from '../../features/schedules/pages/SchedulesPage';
+import { CreateEditInspectionSchedulePage } from '../../features/schedules/pages/CreateEditInspectionSchedulePage';
+import { NotFoundPage } from '../../pages/NotFoundPage';
 import { DefectsListPage } from '../../features/defects/pages/DefectsListPage';
 import { DefectDetailPage } from '../../features/defects/pages/DefectDetailPage';
 import { DefectFormPage } from '../../features/defects/pages/DefectFormPage';
@@ -79,7 +84,12 @@ export function AppRoutes() {
         <Route path="assets/:id" element={<AssetDetailPage />} />
         <Route path="work-orders" element={<WorkOrdersListPage />} />
         <Route path="work-orders/:id" element={<WorkOrderDetailPage />} />
-        <Route path="pm-schedules" element={<PMSchedulesListPage />} />
+        {/* Unified Schedules (with backward compatibility) */}
+        <Route path="schedules" element={<UnifiedSchedulesPage />} />
+        <Route path="schedules/inspections/new" element={<CreateEditInspectionSchedulePage />} />
+        <Route path="schedules/inspections/:id" element={<CreateEditInspectionSchedulePage />} />
+        <Route path="schedules/inspections/:id/edit" element={<CreateEditInspectionSchedulePage />} />
+        <Route path="pm-schedules" element={<Navigate to="/schedules?tab=pm" replace />} />
         <Route path="pm-schedules/:id" element={<PMScheduleDetailPage />} />
         <Route path="inspections" element={<InspectionsListPage />} />
         <Route path="inspections/start" element={<StartInspectionPage />} />
@@ -93,9 +103,12 @@ export function AppRoutes() {
         <Route path="inspections/templates/:id" element={<CheckSheetsListPage />} />
         <Route path="inspections/checklists" element={<InspectionsPage />} />
         <Route path="inspections/checklists/:id" element={<ChecklistsListPage />} />
+        <Route path="inspections/schedules" element={<InspectionSchedulesPage />} />
+        <Route path="inspections/planner" element={<InspectionPlannerPage />} />
         <Route path="defects" element={<DefectsListPage />} />
         <Route path="defects/new" element={<DefectFormPage />} />
-        <Route path="defects/:id" element={<DefectDetailPage />} />
+        <Route path="defects/:defectCode/edit" element={<DefectFormPage />} />
+        <Route path="defects/:defectCode" element={<DefectDetailPage />} />
         <Route path="handovers" element={<HandoversListPage />} />
         <Route path="handovers/submitted/:id" element={<HandoverSubmittedPage />} />
         <Route path="handovers/:id" element={<HandoverViewPage />} />
@@ -121,7 +134,13 @@ export function AppRoutes() {
         
         {/* Support */}
         <Route path="help" element={<HelpPage />} />
+        
+        {/* 404 - Catch all unmatched routes */}
+        <Route path="*" element={<NotFoundPage />} />
       </Route>
+      
+      {/* 404 for root-level unmatched routes */}
+      <Route path="*" element={<NotFoundPage />} />
     </Routes>
     );
   } catch (error) {

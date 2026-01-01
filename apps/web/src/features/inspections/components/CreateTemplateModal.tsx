@@ -322,10 +322,13 @@ export function CreateTemplateModal({ isOpen, onClose }: CreateTemplateModalProp
                         value={item.type}
                         onChange={(e) => updateItem(item.id, { type: e.target.value as ChecklistItem['type'] })}
                         options={[
+                          { value: 'YesNo', label: 'Yes/No' },
                           { value: 'PassFail', label: 'Pass/Fail' },
                           { value: 'PassFailNA', label: 'Pass/Fail/N/A' },
-                          { value: 'Number', label: 'Number' },
+                          { value: 'Checkbox', label: 'Checkbox' },
+                          { value: 'Numeric', label: 'Numeric' },
                           { value: 'Text', label: 'Text' },
+                          { value: 'Signature', label: 'Signature' },
                         ]}
                         className="w-40"
                       />
@@ -409,7 +412,8 @@ export function CreateTemplateModal({ isOpen, onClose }: CreateTemplateModalProp
                               options={[
                                 { value: 'PassFail', label: 'Pass/Fail' },
                                 { value: 'PassFailNA', label: 'Pass/Fail/N/A' },
-                                { value: 'Number', label: 'Number' },
+                                { value: 'Numeric', label: 'Numeric' },
+                          { value: 'Signature', label: 'Signature' },
                                 { value: 'Text', label: 'Text' },
                               ]}
                               className="w-32"

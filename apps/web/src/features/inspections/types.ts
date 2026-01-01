@@ -2,18 +2,24 @@ import type { UserRole } from '@ppm/shared';
 
 // Inspection Types
 export type InspectionType = 
-  | 'PlantAcceptance'
-  | 'Daily'
-  | 'Weekly'
-  | 'Monthly'
-  | 'PreUse'
-  | 'TimeBased';
+  | 'Safety'
+  | 'Statutory'
+  | 'Operational'
+  | 'Handover'
+  | 'Custom'
+  | 'PlantAcceptance' // Legacy
+  | 'Daily' // Legacy
+  | 'Weekly' // Legacy
+  | 'Monthly' // Legacy
+  | 'PreUse' // Legacy
+  | 'TimeBased'; // Legacy
 
 // Inspection Status
 export type InspectionStatus = 
   | 'Draft'
   | 'InProgress'
   | 'Submitted'
+  | 'ChangesRequested'
   | 'Approved'
   | 'Closed';
 
@@ -21,7 +27,18 @@ export type InspectionStatus =
 export type InspectionResult = 'Pass' | 'Fail' | 'Pending';
 
 // Checklist Item Types
-export type ChecklistItemType = 'PassFail' | 'PassFailNA' | 'Number' | 'Text' | 'Photo';
+export type ChecklistItemType = 
+  | 'YesNo' 
+  | 'PassFail' 
+  | 'Checkbox'
+  | 'Numeric' 
+  | 'Text' 
+  | 'Dropdown'
+  | 'Date' 
+  | 'Time' 
+  | 'Photo' 
+  | 'Signature'
+  | 'PassFailNA'; // Legacy
 
 // Checklist Item Result
 export type ChecklistItemResult = 'Pass' | 'Fail' | 'NA' | null;
@@ -51,6 +68,7 @@ export interface ChecklistSection {
 export interface ChecklistItem {
   id: string;
   sectionId?: string; // Optional section grouping
+  itemNumber?: string; // Auto-generated item number (e.g., "1.1", "2.3")
   question: string;
   type: ChecklistItemType;
   required: boolean;
@@ -58,26 +76,79 @@ export interface ChecklistItem {
   // Backward compatibility: support both critical and safetyCritical
   critical?: boolean; // Deprecated: use safetyCritical instead
   order: number;
-  unit?: string; // For Number type
-  minValue?: number; // For Number type
-  maxValue?: number; // For Number type
+  
+  // Validation rules
+  unit?: string; // For Numeric type
+  minValue?: number; // For Numeric type
+  maxValue?: number; // For Numeric type
+  dropdownOptions?: string[]; // For Dropdown type - template-defined options
+  
+  // Failure requirements
   photoRequiredOnFail: boolean;
-  failRequiresComment?: boolean; // Auto-enabled when safetyCritical is true
+  failRequiresComment: boolean; // Auto-enabled when safetyCritical is true
+  
+  // Defect creation
+  allowDefectCreation: boolean; // If true, can create defect on failure
   defaultSeverity?: 'Low' | 'Medium' | 'High' | 'Critical' | 'Minor' | 'Major'; // For defect creation
   complianceTag?: 'PUWER' | 'LOLER' | 'SITE_RULE' | string; // For defect creation
+  
+  // Guidance/help text
+  guidanceText?: string; // Default guidance/help text shown to operative
 }
 
 // Checklist Item Answer (inspection instance)
 export interface ChecklistItemAnswer {
   id: string;
   checklistItemId: string;
-  result: ChecklistItemResult;
-  numericValue?: number;
-  textValue?: string;
-  comment?: string;
+  result: ChecklistItemResult; // Pass/Fail/NA/null - for PassFail, YesNo types
+  numericValue?: number; // For Numeric type
+  textValue?: string; // For Text type
+  dateValue?: string; // ISO date string for Date type
+  timeValue?: string; // HH:mm format for Time type
+  booleanValue?: boolean; // For YesNo, Checkbox types
+  dropdownValue?: string; // For Dropdown type - selected option
+  signatureData?: string; // Base64 image data for Signature type
+  signatureName?: string; // Signer name for Signature type
+  signatureTimestamp?: string; // ISO timestamp for Signature type
+  comment?: string; // Item-level comment
   photoUri?: string; // If photo was captured (single photo for PassFail items)
-  photoUris?: string[]; // Multiple photos for Photo type items
-  unit?: string; // For Number items - selected unit
+  photoUris?: string[]; // Multiple photos for Photo type items and item-level photos
+  unit?: string; // For Numeric items - selected unit
+  linkedDefectId?: string; // If defect was created from this item
+}
+
+// Inspection Template Configuration
+export interface InspectionTemplateConfig {
+  // Approval workflows
+  requireSupervisorApproval: boolean;
+  requireManagerApproval: boolean;
+  
+  // Signatures
+  requireSignatures: boolean;
+  requireOperativeSignature: boolean;
+  requireSupervisorSignature: boolean;
+  requireManagerSignature?: boolean; // Manager/Superintendent signature
+  
+  // Signature roles (multi-select)
+  signatureRoles?: ('operative' | 'supervisor' | 'manager')[]; // Default: Technician/Fitter, Supervisor, Manager/Superintendent
+  
+  // Defect creation
+  allowDefectCreation: boolean; // Global setting - can be overridden per item
+  
+  // Evidence defaults
+  allowPhotoUploads?: boolean; // Default: true
+  allowFileUpload?: boolean; // Default: true
+  notesRequired?: boolean; // Default: false
+  
+  // Compliance tags (template-level)
+  safetyCritical?: boolean;
+  statutory?: boolean;
+  complianceTags?: ('LOLER' | 'PUWER' | 'Lifting' | 'Pressure' | 'Electrical' | 'Fire' | string)[]; // Multi-select
+  
+  // Applicability
+  applicableAssetTypes?: string[]; // Optional: specific asset types
+  applicableSiteIds?: string[]; // Optional: site-specific
+  applicableLocationIds?: string[]; // Optional: location-specific
 }
 
 // Inspection Template
@@ -86,14 +157,15 @@ export interface InspectionTemplate {
   name: string;
   description?: string;
   inspectionType: InspectionType;
-  assetTypeId?: string; // Optional: specific asset type
+  assetTypeId?: string; // Optional: specific asset type (legacy - use config.applicableAssetTypes)
   assetTypeCode?: string; // For display
-  siteId?: string; // Optional: site-specific variant
+  siteId?: string; // Optional: site-specific variant (legacy - use config.applicableSiteIds)
   siteName?: string; // For display
   version: string; // Current version
   versions: TemplateVersion[]; // Version history
   sections: ChecklistSection[];
   items: ChecklistItem[];
+  config: InspectionTemplateConfig; // Template-level configuration
   isActive: boolean;
   createdAt: string;
   createdBy: string;
@@ -108,31 +180,45 @@ export interface InspectionAttachment {
   id: string;
   type: AttachmentType;
   filename: string;
+  fileType?: string; // MIME type (e.g., 'image/jpeg', 'application/pdf')
   uri: string; // Blob URL or file path
+  size?: number; // File size in bytes
   createdAt: string;
   createdBy: string;
+  createdByName?: string; // Uploader name
+  description?: string; // Optional description/notes
+  linkedToItemId?: string; // Optional: link to specific checklist item
 }
 
 // Inspection Signature
 export interface InspectionSignature {
   id: string;
-  role: 'inspector' | 'supervisor';
+  role: 'inspector' | 'operative' | 'supervisor' | 'manager';
   method: SignatureMethod;
-  signature: string; // Typed name, checkbox confirmation, or drawn signature data
+  signature: string; // Typed name, checkbox confirmation, or drawn signature data (base64 image)
+  signatureImage?: string; // Base64 image data for drawn signatures
   signedAt: string;
   signedBy: string;
   signedByName: string;
+  signedByRole?: string; // User role at time of signing
+  declarationText?: string; // Declaration text that was signed
 }
 
-// Inspection History Entry
+// Inspection History Entry (Audit Trail)
 export interface InspectionHistoryEntry {
   id: string;
   at: string;
   by: string;
   byName: string;
-  type: 'status_change' | 'edit' | 'revision' | 'approval' | 'reopen' | 'close';
+  byRole?: string; // User role at time of action
+  type: 'status_change' | 'edit' | 'revision' | 'approval' | 'reopen' | 'close' | 'signature' | 'field_change' | 'comment' | 'attachment';
   summary: string;
-  data?: Record<string, unknown>;
+  data?: Record<string, unknown>; // Additional context
+  fieldChanges?: Array<{
+    field: string;
+    before: any;
+    after: any;
+  }>; // Field-level changes for audit trail
 }
 
 // Main Inspection Entity
@@ -169,6 +255,7 @@ export interface Inspection {
   // Evidence
   attachments: InspectionAttachment[];
   signatures: InspectionSignature[];
+  declarations?: InspectionDeclaration[]; // Template-driven declarations
 
   // Timing
   inspectionDate: string; // Scheduled/planned date
@@ -182,8 +269,19 @@ export interface Inspection {
   // Assignment
   inspectorId: string;
   inspectorName: string;
+  inspectorRole?: string; // User role at time of creation
   supervisorId?: string; // Reviewer
   supervisorName?: string;
+  supervisorRole?: string; // Supervisor role
+  managerId?: string; // Manager approver (if required)
+  managerName?: string;
+  managerRole?: string; // Manager role
+  
+  // Approval workflow
+  approvalStatus?: 'pending' | 'approved' | 'rejected' | 'changes_requested';
+  approvalComment?: string; // Comment from supervisor/manager
+  approvalRequestedAt?: string;
+  approvalRequestedBy?: string;
 
   // Linked Entities
   linkedDefectIds: string[]; // Auto-created defects
@@ -205,28 +303,51 @@ export interface Inspection {
   // Revision tracking
   revisionNumber: number;
   parentInspectionId?: string; // If this is a revision
+
+  // Offline sync status
+  syncStatus?: 'synced' | 'pending' | 'syncing' | 'failed';
+  syncedAt?: string; // When last successfully synced
+  lastSyncAttempt?: string; // Last sync attempt timestamp
+
+  // Scheduling fields
+  scheduleId?: string; // Link to generated schedule
+  scheduleCode?: string; // For display
+  plannedStartAt?: string; // Scheduled datetime (ISO)
+  dueAt?: string; // Calculated due date
+  assignedToUserId?: string; // May differ from inspectorId if reassigned
+  createdFrom?: 'MANUAL' | 'SCHEDULE' | 'BULK' | 'EVENT';
+  assetMeterAtCreation?: number; // For usage-based tracking
+  recurrenceKey?: string; // For duplicate prevention
 }
 
 // Inspection Filter
 export interface InspectionFilter {
   search?: string;
-  status?: InspectionStatus;
-  result?: InspectionResult;
-  inspectionType?: InspectionType;
-  siteId?: string;
+  status?: InspectionStatus | InspectionStatus[];
+  result?: InspectionResult | InspectionResult[];
+  inspectionType?: InspectionType | InspectionType[];
+  siteId?: string | string[];
+  locationId?: string | string[];
   assetId?: string;
-  inspectorId?: string;
-  supervisorId?: string;
+  templateId?: string | string[];
+  inspectorId?: string | string[];
+  supervisorId?: string | string[];
   showDueSoon?: boolean;
   showOverdue?: boolean;
   showFailed?: boolean;
   showMyInspections?: boolean;
   showDrafts?: boolean;
+  hasDefects?: boolean;
+  isCompliance?: boolean;
   dateFrom?: string;
   dateTo?: string;
+  completedDateFrom?: string;
+  completedDateTo?: string;
+  scheduledDateFrom?: string;
+  scheduledDateTo?: string;
 }
 
-// Inspection Settings
+// Inspection Settings (Global settings - template config overrides these)
 export interface InspectionSettings {
   requireCommentOnFail: boolean;
   requirePhotoOnFail: boolean;
@@ -235,6 +356,15 @@ export interface InspectionSettings {
   enableSignatures: boolean;
   checklistItemSeverityDefaults: boolean;
   conflictResolution: 'last-write-wins' | 'flag-for-review';
+}
+
+// Declaration text for signatures
+export interface InspectionDeclaration {
+  id: string;
+  role: 'operative' | 'supervisor' | 'manager';
+  declarationText: string; // Template-defined declaration text
+  signed: boolean;
+  signatureId?: string; // Reference to InspectionSignature
 }
 
 // Inspection Summary Stats
