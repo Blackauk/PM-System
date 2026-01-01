@@ -37,14 +37,29 @@ class ApiClient {
     options: RequestInit = {}
   ): Promise<T> {
     const token = localStorage.getItem('accessToken');
-    const headers: HeadersInit = {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    };
-
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
+    
+    // Convert options.headers to Record<string, string> for type safety
+    const existingHeaders: Record<string, string> = {};
+    if (options.headers) {
+      if (options.headers instanceof Headers) {
+        options.headers.forEach((value, key) => {
+          existingHeaders[key] = value;
+        });
+      } else if (Array.isArray(options.headers)) {
+        options.headers.forEach(([key, value]) => {
+          existingHeaders[key] = value;
+        });
+      } else {
+        Object.assign(existingHeaders, options.headers);
+      }
     }
+    
+    // Build headers immutably
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...existingHeaders,
+      ...(token && { Authorization: `Bearer ${token}` }),
+    };
 
     let response = await fetch(`${this.baseUrl}${endpoint}`, {
       ...options,
@@ -56,10 +71,15 @@ class ApiClient {
     if (response.status === 401 && token) {
       const newToken = await this.refreshToken();
       if (newToken) {
-        headers['Authorization'] = `Bearer ${newToken}`;
+        // Build new headers object with updated token
+        const refreshedHeaders: Record<string, string> = {
+          'Content-Type': 'application/json',
+          ...existingHeaders,
+          Authorization: `Bearer ${newToken}`,
+        };
         response = await fetch(`${this.baseUrl}${endpoint}`, {
           ...options,
-          headers,
+          headers: refreshedHeaders,
           credentials: 'include',
         });
       } else {
