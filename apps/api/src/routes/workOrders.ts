@@ -93,7 +93,6 @@ export default async function workOrderRoutes(fastify: FastifyInstance) {
         createdBy: true,
         approvedBy: true,
         parts: true,
-        attachments: true,
         notes: {
           include: {
             createdBy: {
@@ -116,7 +115,29 @@ export default async function workOrderRoutes(fastify: FastifyInstance) {
       reply.code(403).send({ error: 'Forbidden' });
       return;
     }
-    return workOrder;
+    
+    // Query attachments separately (Attachment is not a Prisma relation on WorkOrder)
+    const attachments = await prisma.attachment.findMany({
+      where: {
+        entityType: 'WorkOrder',
+        entityId: id,
+      },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        uploadedBy: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+    });
+    
+    return {
+      ...workOrder,
+      attachments,
+    };
   });
 
   // Create work order

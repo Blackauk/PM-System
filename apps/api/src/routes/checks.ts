@@ -283,7 +283,6 @@ export default async function checkRoutes(fastify: FastifyInstance) {
             question: true,
           },
         },
-        attachments: true,
       },
     });
     if (!submission) {
@@ -294,7 +293,29 @@ export default async function checkRoutes(fastify: FastifyInstance) {
       reply.code(403).send({ error: 'Forbidden' });
       return;
     }
-    return submission;
+    
+    // Query attachments separately (Attachment is not a Prisma relation on CheckSubmission)
+    const attachments = await prisma.attachment.findMany({
+      where: {
+        entityType: 'CheckSubmission',
+        entityId: id,
+      },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        uploadedBy: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+    });
+    
+    return {
+      ...submission,
+      attachments,
+    };
   });
 }
 

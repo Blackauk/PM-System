@@ -88,11 +88,3 @@ export default async function zoneRoutes(fastify: FastifyInstance) {
   });
 }
 
-function requireAuth(request: FastifyRequest) {
-  const user = (request as any).user;
-  if (!user) {
-    throw new Error('Unauthorized');
-  }
-  return user;
-}
-

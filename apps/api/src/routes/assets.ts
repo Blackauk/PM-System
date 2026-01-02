@@ -89,9 +89,6 @@ export default async function assetRoutes(fastify: FastifyInstance) {
           orderBy: { createdAt: 'desc' },
           take: 10,
         },
-        attachments: {
-          orderBy: { createdAt: 'desc' },
-        },
       },
     });
     if (!asset) {
@@ -102,7 +99,29 @@ export default async function assetRoutes(fastify: FastifyInstance) {
       reply.code(403).send({ error: 'Forbidden' });
       return;
     }
-    return asset;
+    
+    // Query attachments separately (Attachment is not a Prisma relation on Asset)
+    const attachments = await prisma.attachment.findMany({
+      where: {
+        entityType: 'Asset',
+        entityId: id,
+      },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        uploadedBy: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+    });
+    
+    return {
+      ...asset,
+      attachments,
+    };
   });
 
   // Get asset hierarchy

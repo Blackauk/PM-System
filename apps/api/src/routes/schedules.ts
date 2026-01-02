@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { createScheduleSchema, updateScheduleSchema } from '../shared/index.js';
-import { requireAuth, canAccessSite, canManageSchedules } from '../utils/permissions.js';
+import { requireAuth, requireRole, canAccessSite, canManageSchedules } from '../utils/permissions.js';
 import { createAuditLog } from '../utils/audit.js';
 
 export default async function scheduleRoutes(fastify: FastifyInstance) {
@@ -77,14 +77,30 @@ export default async function scheduleRoutes(fastify: FastifyInstance) {
       return;
     }
     const body = createScheduleSchema.parse(request.body);
-    if (!canAccessSite(user, body.siteId)) {
+    
+    const prisma = fastify.prisma;
+    
+    // Derive siteId from asset (Schedule model requires siteId, but schema doesn't include it in request)
+    const asset = await prisma.asset.findUnique({
+      where: { id: body.assetId },
+      select: { siteId: true },
+    });
+    
+    if (!asset) {
+      reply.code(404).send({ error: 'Asset not found' });
+      return;
+    }
+    
+    if (!canAccessSite(user, asset.siteId)) {
       reply.code(403).send({ error: 'Forbidden' });
       return;
     }
 
-    const prisma = fastify.prisma;
     const schedule = await prisma.schedule.create({
-      data: body,
+      data: {
+        ...body,
+        siteId: asset.siteId,
+      },
       include: {
         asset: true,
         site: true,
