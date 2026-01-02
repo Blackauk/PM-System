@@ -1,5 +1,5 @@
 import type { FastifyRequest } from 'fastify';
-import type { UserRole } from '../shared/index.js';
+import type { UserRole } from '../shared/types.js';
 
 export interface AuthenticatedUser {
   userId: string;

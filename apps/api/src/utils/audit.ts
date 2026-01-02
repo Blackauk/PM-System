@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import type { AuditAction } from '../shared/index.js';
+import type { AuditAction } from '../shared/types.js';
 
 const prisma = new PrismaClient();
 
